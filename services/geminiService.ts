@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { CategoryDef, SmartCategoryResponse, PurchaseLog } from "../types";
 
@@ -27,7 +26,8 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 5, delay = 2000)
 // Categorize a single product name into an existing or new category
 export const categorizeProduct = async (productName: string, availableCategories: CategoryDef[]): Promise<SmartCategoryResponse | null> => {
   if (!process.env.API_KEY) {
-    throw new Error("API Key is missing.");
+    console.error("Gemini API Key is missing. AI features disabled.");
+    return null;
   }
 
   const categoryNames = availableCategories.map(c => c.name);
@@ -60,7 +60,10 @@ export const categorizeProduct = async (productName: string, availableCategories
 
 // Generate a set of shopping items (e.g. ingredients for a dish)
 export const generateSetItems = async (setName: string, availableCategories: CategoryDef[]) => {
-  if (!process.env.API_KEY) throw new Error("API Key missing");
+  if (!process.env.API_KEY) {
+    console.error("Gemini API Key is missing. AI features disabled.");
+    return { setEmoji: '📦', items: [] };
+  }
   const categoryNames = availableCategories.map(c => c.name);
 
   return callWithRetry(async () => {
@@ -97,14 +100,17 @@ export const generateSetItems = async (setName: string, availableCategories: Cat
 
 // Parse a dictated string into a list of specific products
 export const parseDictatedText = async (text: string, availableCategories: CategoryDef[]) => {
-  if (!process.env.API_KEY) throw new Error("API Key missing");
+  if (!process.env.API_KEY) {
+    console.error("Gemini API Key is missing. AI features disabled.");
+    return { items: [], dishName: null };
+  }
   const categoryNames = availableCategories.map(c => c.name);
 
   return callWithRetry(async () => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
-      contents: `Извлеки товары из: "${text}". ПРАВИЛО: Блюдо (шаурма, пицца) = 1 товар, если не сказано "ингредиенты для". Категории из: ${categoryNames.join(', ')}.`,
+      contents: `Извлеки товары из: "${text}". ПРАВИЛО: Блюдо (шаурма, пицца) = 1 товар, если не сказано "ингредиенты для" или "набор для". Если сказано "набор" или "ингредиенты", разбей на составные части. Категории из: ${categoryNames.join(', ')}.`,
       config: { 
         responseMimeType: "application/json",
         responseSchema: {
@@ -134,7 +140,10 @@ export const parseDictatedText = async (text: string, availableCategories: Categ
 
 // Analyze purchase history to suggest sets
 export const analyzeHistoryForSets = async (logs: PurchaseLog[], availableCategories: CategoryDef[]) => {
-  if (!process.env.API_KEY) throw new Error("API Key missing");
+  if (!process.env.API_KEY) {
+    console.error("Gemini API Key is missing. AI features disabled.");
+    return [];
+  }
   const categoryNames = availableCategories.map(c => c.name);
   
   const historySummary = logs.map(l => ({

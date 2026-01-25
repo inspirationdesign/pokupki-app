@@ -60,8 +60,8 @@ const App: React.FC = () => {
   });
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('lumina_dark') === 'true');
   
-  // AI is disabled by default
-  const [isAiEnabled, setIsAiEnabled] = useState(() => localStorage.getItem('lumina_ai_enabled') === 'true');
+  // AI is enabled by default unless explicitly disabled
+  const [isAiEnabled, setIsAiEnabled] = useState(() => localStorage.getItem('lumina_ai_enabled') !== 'false');
   
   const [confirmDelete, setConfirmDelete] = useState(() => localStorage.getItem('lumina_confirm_delete') !== 'false');
   const [confirmItemDelete, setConfirmItemDelete] = useState(() => localStorage.getItem('lumina_confirm_item_delete') !== 'false');
@@ -512,17 +512,7 @@ const App: React.FC = () => {
   };
 
   const inviteUser = () => {
-    const tg = (window as any).Telegram?.WebApp;
-    if (tg) {
-        // switchInlineQuery is available from version 6.6+
-        if (tg.isVersionAtLeast && tg.isVersionAtLeast('6.6')) {
-            tg.switchInlineQuery("Присоединяйся к моему списку покупок в Lumina Grocer!", ["users", "groups"]);
-        } else {
-            showToast("Функция недоступна в этой версии Telegram");
-        }
-    } else {
-        showToast("Доступно только в Telegram");
-    }
+    showToast("Совместный доступ появится в ближайшем обновлении!");
   };
 
   const buyList = useMemo(() => {
