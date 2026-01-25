@@ -1673,145 +1673,90 @@ const App: React.FC = () => {
                   <div className="flex flex-col h-full">
                     <p className="text-[10px] font-black uppercase opacity-40 mb-2 px-2 pt-2">Товары (каждый с новой строки)</p>
                     <textarea 
-                      value={newSetManualItems} 
-                      onChange={e => setNewSetManualItems(e.target.value)} 
-                      placeholder="Картошка&#10;Лук&#10;Мясо" 
-                      className="w-full flex-1 bg-transparent px-3 pb-3 font-bold outline-none focus:ring-0 dark:text-white resize-none" 
+                      value={newSetManualItems}
+                      onChange={(e) => setNewSetManualItems(e.target.value)}
+                      placeholder="Список товаров..."
+                      className="w-full h-full bg-transparent resize-none outline-none font-bold text-sm"
                     />
                   </div>
               ) : setCreationMode === 'history' ? (
-                  <div className="flex flex-col h-full">
-                     <p className="text-[10px] font-black uppercase opacity-40 mb-2 px-2 pt-2">Выберите из истории</p>
-                     <div className="space-y-2 flex-1">
-                        {historyList.map(item => {
-                            const isSelected = selectedHistoryItems.includes(item.id);
-                            return (
-                                <div key={item.id} onClick={() => setSelectedHistoryItems(prev => isSelected ? prev.filter(id => id !== item.id) : [...prev, item.id])} className={`flex items-center gap-3 p-3 rounded-2xl border transition-all cursor-pointer ${isSelected ? 'bg-white dark:bg-slate-800 border-primary/30 shadow-sm' : 'border-transparent hover:bg-white/50 dark:hover:bg-slate-800/50'}`}>
-                                    <div className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${isSelected ? 'bg-primary border-primary' : 'border-slate-300 dark:border-slate-600'}`}>
-                                        {isSelected && <Icons.Check size={12} className="text-white" strokeWidth={3} />}
-                                    </div>
-                                    <span className="font-bold text-sm">{item.name}</span>
-                                </div>
-                            )
-                        })}
-                        {historyList.length === 0 && <p className="text-center text-slate-400 py-10 text-xs italic">История покупок пуста</p>}
-                     </div>
+                  <div className="space-y-1">
+                      {historyList.length === 0 ? (
+                          <div className="text-center py-8 text-slate-400 text-xs">История пуста</div>
+                      ) : (
+                          historyList.map(item => (
+                              <div key={item.id} onClick={() => setSelectedHistoryItems(prev => prev.includes(item.id) ? prev.filter(i => i !== item.id) : [...prev, item.id])} className={`flex items-center gap-3 p-3 rounded-2xl transition-all cursor-pointer ${selectedHistoryItems.includes(item.id) ? 'bg-white dark:bg-slate-800 shadow-sm' : 'hover:bg-slate-100 dark:hover:bg-slate-700/50'}`}>
+                                  <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedHistoryItems.includes(item.id) ? 'bg-primary border-primary' : 'border-slate-300'}`}>
+                                      {selectedHistoryItems.includes(item.id) && <Icons.Check size={12} className="text-white" />}
+                                  </div>
+                                  <span className="text-sm font-bold">{item.name}</span>
+                              </div>
+                          ))
+                      )}
                   </div>
               ) : (
-                  // AI MODE
-                  <div className="flex flex-col h-full">
-                      {aiSetPreviewItems.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center h-full text-center px-4">
-                              <div className="w-16 h-16 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center mb-4 text-primary">
-                                  <Icons.Bot size={32} />
-                              </div>
-                              <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 font-medium">Введите название набора выше и нажмите кнопку, чтобы сгенерировать состав.</p>
-                              <button 
-                                onClick={async () => {
-                                  if (!newSetName.trim()) { showToast("Введите название набора", true); return; }
-                                  setIsAiLoading(true);
-                                  try {
-                                    const result = await generateSetItems(newSetName, categories);
-                                    if (result) {
-                                      setNewSetEmoji(result.setEmoji || '🍱');
-                                      setAiSetPreviewItems(result.items);
-                                    }
-                                  } catch (err) { handleAiError(err); } finally { setIsAiLoading(false); }
-                                }}
-                                disabled={isAiLoading}
-                                className="w-full py-4 bg-primary text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg flex items-center justify-center gap-2"
-                              >
-                                  {isAiLoading ? <Icons.Loader2 className="animate-spin" /> : 'Сгенерировать'}
-                              </button>
+                  <div className="flex flex-col h-full items-center justify-center text-center p-4">
+                      {aiSetPreviewItems.length > 0 ? (
+                          <div className="w-full space-y-2">
+                             {aiSetPreviewItems.map((it, i) => (
+                                 <div key={i} className="flex items-center gap-2 bg-white dark:bg-slate-900 p-2 rounded-xl text-xs font-bold">
+                                     <span>{it.emoji}</span><span>{it.name}</span>
+                                 </div>
+                             ))}
                           </div>
                       ) : (
-                          <div className="flex flex-col h-full">
-                              <div className="flex items-center justify-between mb-2 px-2 pt-2">
-                                  <p className="text-[10px] font-black uppercase opacity-40">Предложенные товары</p>
-                                  <button onClick={() => setAiSetPreviewItems([])} className="text-[10px] font-black uppercase text-slate-400 hover:text-red-500">Сброс</button>
-                              </div>
-                              <div className="flex-1 overflow-y-auto space-y-2 pr-1 scrollbar-hide pb-2">
-                                  {aiSetPreviewItems.map((item, idx) => (
-                                      <div key={idx} className="flex items-center gap-3 p-3 bg-white dark:bg-slate-800 rounded-2xl border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors group">
-                                          <div className="w-5 h-5 rounded flex items-center justify-center border border-slate-300 dark:border-slate-600">
-                                              <Icons.Check size={12} className="text-slate-300" />
-                                          </div>
-                                          <div className="flex-1 min-w-0">
-                                              {editingAiSetIndex === idx ? (
-                                                  <input 
-                                                    autoFocus
-                                                    className="w-full bg-transparent border-b-2 border-primary outline-none text-sm font-bold"
-                                                    value={editingAiSetName}
-                                                    onChange={(e) => setEditingAiSetName(e.target.value)}
-                                                    onBlur={() => {
-                                                      if (editingAiSetName.trim()) {
-                                                        setAiSetPreviewItems(p => p.map((it, i) => i === idx ? { ...it, name: editingAiSetName } : it));
-                                                      }
-                                                      setEditingAiSetIndex(null);
-                                                    }}
-                                                    onKeyDown={(e) => {
-                                                      if (e.key === 'Enter') {
-                                                        if (editingAiSetName.trim()) {
-                                                            setAiSetPreviewItems(p => p.map((it, i) => i === idx ? { ...it, name: editingAiSetName } : it));
-                                                        }
-                                                        setEditingAiSetIndex(null);
-                                                      }
-                                                    }}
-                                                  />
-                                              ) : (
-                                                  <div>
-                                                      <p className="font-bold text-sm truncate">{item.name}</p>
-                                                      <p className="text-[10px] opacity-40">{item.categoryName}</p>
-                                                  </div>
-                                              )}
-                                          </div>
-                                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                              {editingAiSetIndex !== idx && (
-                                                  <button onClick={() => { setEditingAiSetIndex(idx); setEditingAiSetName(item.name); }} className="p-2 text-slate-300 hover:text-primary"><Icons.Pencil size={14} /></button>
-                                              )}
-                                              <button onClick={() => setAiSetPreviewItems(p => p.filter((_, i) => i !== idx))} className="p-2 text-slate-300 hover:text-red-500"><Icons.Trash2 size={14} /></button>
-                                          </div>
-                                      </div>
-                                  ))}
-                              </div>
-                          </div>
+                         <>
+                             <Icons.Sparkles className="text-primary mb-4" size={32} />
+                             <p className="text-xs font-bold mb-4">Опишите, что нужно купить</p>
+                             <input value={newSetManualItems} onChange={e => setNewSetManualItems(e.target.value)} placeholder="Ингредиенты для пиццы" className="w-full bg-white dark:bg-slate-900 p-3 rounded-xl text-sm font-bold outline-none border dark:border-slate-700 mb-4" />
+                             <button onClick={async () => {
+                                 if(!newSetManualItems.trim()) return;
+                                 setIsAiLoading(true);
+                                 try {
+                                     const res = await generateSetItems(newSetManualItems, categories);
+                                     if(res) {
+                                         setNewSetEmoji(res.setEmoji);
+                                         setAiSetPreviewItems(res.items);
+                                     }
+                                 } catch(e) { handleAiError(e); } finally { setIsAiLoading(false); }
+                             }} className="bg-primary text-white px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-widest">
+                                 {isAiLoading ? <Icons.Loader2 className="animate-spin" /> : 'Генерировать'}
+                             </button>
+                         </>
                       )}
                   </div>
               )}
             </div>
-            
-            <div className="mt-4 space-y-3 flex-shrink-0">
-              <div className="flex gap-3">
-                <button onClick={() => { setIsSetModalOpen(false); setEditingSet(null); setNewSetName(''); setNewSetEmoji('📦'); setNewSetManualItems(''); setSetCreationMode('text'); setSelectedHistoryItems([]); setAiSetPreviewItems([]); }} className="flex-1 font-black uppercase text-[10px] tracking-widest text-slate-400">Отмена</button>
-                <button onClick={handleManualSetCreate} className="flex-[2] h-14 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black uppercase text-[10px] tracking-widest rounded-2xl shadow-lg hover:opacity-90 transition-opacity">Сохранить</button>
-              </div>
+
+            <div className="flex gap-3 mt-4 shrink-0">
+                <button onClick={() => setIsSetModalOpen(false)} className="flex-1 font-black uppercase text-[10px] tracking-widest text-slate-400">Отмена</button>
+                <button onClick={handleManualSetCreate} className="flex-[2] h-14 bg-primary text-white font-black uppercase text-[10px] tracking-widest rounded-2xl shadow-lg hover:opacity-90 transition-opacity">Сохранить</button>
             </div>
           </div>
         </div>
       )}
-
-      {/* EMOJI PICKER MODAL */}
+      
+      {/* EMOJI PICKER AND NAVBAR */}
       {isEmojiPickerOpen && (
-        <div className="fixed inset-0 z-[700] flex items-center justify-center p-6 bg-black/60 backdrop-blur-md" onClick={() => setIsEmojiPickerOpen(false)}>
-            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[32px] pt-5 px-6 pb-6 shadow-2xl flex flex-col max-h-[60vh] animate-bounce-short" onClick={e => e.stopPropagation()}>
-                <ModalHeader title="Выберите иконку" onClose={() => setIsEmojiPickerOpen(false)} />
-                <div className="grid grid-cols-5 gap-3 overflow-y-auto p-1 scrollbar-hide">
-                    {EMOJI_LIST.map(emoji => (
-                    <button key={emoji} onClick={() => { setNewSetEmoji(emoji); setIsEmojiPickerOpen(false); }} className={`w-14 h-14 text-2xl flex items-center justify-center rounded-2xl transition-all ${newSetEmoji === emoji ? 'bg-primary text-white scale-110 shadow-lg' : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>{emoji}</button>
-                    ))}
-                </div>
-            </div>
-        </div>
+          <div className="fixed inset-0 z-[600] flex items-center justify-center p-6 bg-black/60 backdrop-blur-md">
+              <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[32px] pt-5 px-6 pb-6 shadow-2xl flex flex-col h-[60vh] animate-bounce-short">
+                  <ModalHeader title="Выберите иконку" onClose={() => setIsEmojiPickerOpen(false)} />
+                  <div className="flex-1 overflow-y-auto p-1 scrollbar-hide">
+                      <div className="grid grid-cols-5 gap-3">
+                          {EMOJI_LIST.map(emoji => (
+                              <button key={emoji} onClick={() => { setNewSetEmoji(emoji); setIsEmojiPickerOpen(false); }} className={`w-14 h-14 text-2xl flex items-center justify-center rounded-2xl transition-all ${newSetEmoji === emoji ? 'bg-primary text-white scale-110 shadow-lg' : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>{emoji}</button>
+                          ))}
+                      </div>
+                  </div>
+              </div>
+          </div>
       )}
 
-      <div className="fixed bottom-0 left-0 right-0 z-30 bg-white/80 dark:bg-[#020617]/80 backdrop-blur-xl border-t dark:border-slate-800 pb-safe">
-        <div className="max-w-xl mx-auto px-6 h-[88px] flex items-start justify-between gap-4 pt-3">
-          <NavItem active={viewMode === 'buy'} onClick={() => setViewMode('buy')} icon={<Icons.ShoppingBag size={22} />} label="Купить" />
-          <NavItem active={viewMode === 'history'} onClick={() => setViewMode('history')} icon={<Icons.History size={22} />} label="История" />
-          <NavItem active={viewMode === 'sets'} onClick={() => setViewMode('sets')} icon={<Icons.List size={22} />} label="Наборы" />
-        </div>
-      </div>
-
+      <nav className="fixed bottom-0 left-0 right-0 h-20 bg-white dark:bg-[#020617] border-t dark:border-slate-800 flex items-center justify-around z-40 pb-safe">
+        <NavItem active={viewMode === 'buy'} onClick={() => setViewMode('buy')} icon={<Icons.ShoppingBag size={24} strokeWidth={viewMode === 'buy' ? 2.5 : 2} />} label="Список" />
+        <NavItem active={viewMode === 'history'} onClick={() => setViewMode('history')} icon={<Icons.History size={24} strokeWidth={viewMode === 'history' ? 2.5 : 2} />} label="История" />
+        <NavItem active={viewMode === 'sets'} onClick={() => setViewMode('sets')} icon={<Icons.List size={24} strokeWidth={viewMode === 'sets' ? 2.5 : 2} />} label="Наборы" />
+      </nav>
     </div>
   );
 };

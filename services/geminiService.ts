@@ -26,16 +26,25 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 5, delay = 2000)
   } catch (error: any) {
     console.error("[Lumina Service] AI Error Details:", error);
     
-    const isRateLimit = 
+    const isRetryable = 
       error?.status === 429 || 
       error?.code === 429 ||
+      error?.status === 503 ||
+      error?.code === 503 ||
       error?.message?.includes('429') || 
+      error?.message?.includes('503') ||
       error?.message?.includes('quota') ||
       error?.message?.includes('RESOURCE_EXHAUSTED') ||
-      (error?.error && (error.error.code === 429 || error.error.status === 'RESOURCE_EXHAUSTED'));
+      error?.message?.includes('Overloaded') ||
+      (error?.error && (
+        error.error.code === 429 || 
+        error.error.code === 503 || 
+        error.error.status === 'RESOURCE_EXHAUSTED' || 
+        error.error.status === 'UNAVAILABLE'
+      ));
 
-    if (retries > 0 && isRateLimit) {
-      console.log(`[Lumina Service] Rate limit hit. Retrying in ${delay}ms... (${retries} left)`);
+    if (retries > 0 && isRetryable) {
+      console.log(`[Lumina Service] Rate limit/Error hit. Retrying in ${delay}ms... (${retries} left)`);
       await new Promise(resolve => setTimeout(resolve, delay));
       return callWithRetry(fn, retries - 1, delay * 1.5);
     }
@@ -90,14 +99,13 @@ export const generateSetItems = async (setName: string, availableCategories: Cat
     const ai = new GoogleGenAI({ apiKey: API_KEY });
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
-      contents: `Create shopping list for: "${setName}".
+      contents: `Create a shopping list of INGREDIENTS or COMPONENTS for the set named: "${setName}".
       
-      CRITICAL RULES:
-      1. Capitalize first letter (e.g. "Milk", not "milk").
-      2. Keep user's intent:
-         - If user asks for "Pizza" (dish) -> return 1 item "Pizza".
-         - If user asks for "Pizza kit", "Ingredients for pizza", "All for pizza" -> return ingredients (Dough, Sauce, Cheese...).
-      3. Use categories from: ${categoryNames.join(', ')}.`,
+      RULES:
+      1. IF user input is a DISH (e.g. "Pizza", "Borsch", "Soup") -> RETURN INGREDIENTS (e.g. "Dough", "Cheese", "Beets", "Meat"). DO NOT return just the dish name.
+      2. IF user input is a generic task (e.g. "Cleaning", "Party") -> RETURN ITEMS needed.
+      3. Capitalize first letter of every item.
+      4. Use categories from: ${categoryNames.join(', ')}.`,
       config: { 
         responseMimeType: "application/json",
         responseSchema: {
