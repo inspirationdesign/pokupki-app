@@ -57,9 +57,9 @@ export const categorizeProduct = async (productName: string, availableCategories
     
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
-      contents: `Определи категорию для: "${productName}". 
-      Существующие: ${categoryNames.join(', ')}. 
-      Если не подходит, создай новую.`,
+      contents: `Category for: "${productName}". 
+      Existing: ${categoryNames.join(', ')}. 
+      If none fit, make new.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -90,7 +90,14 @@ export const generateSetItems = async (setName: string, availableCategories: Cat
     const ai = new GoogleGenAI({ apiKey: API_KEY });
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
-      contents: `Составь список ингредиентов для: "${setName}". Категории из: ${categoryNames.join(', ')}.`,
+      contents: `Create shopping list for: "${setName}".
+      
+      CRITICAL RULES:
+      1. Capitalize first letter (e.g. "Milk", not "milk").
+      2. Keep user's intent:
+         - If user asks for "Pizza" (dish) -> return 1 item "Pizza".
+         - If user asks for "Pizza kit", "Ingredients for pizza", "All for pizza" -> return ingredients (Dough, Sauce, Cheese...).
+      3. Use categories from: ${categoryNames.join(', ')}.`,
       config: { 
         responseMimeType: "application/json",
         responseSchema: {
@@ -130,7 +137,19 @@ export const parseDictatedText = async (text: string, availableCategories: Categ
     const ai = new GoogleGenAI({ apiKey: API_KEY });
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
-      contents: `Извлеки товары из: "${text}". ПРАВИЛО: Блюдо (шаурма, пицца) = 1 товар, если не сказано "ингредиенты для" или "набор для". Если сказано "набор" или "ингредиенты", разбей на составные части. Категории из: ${categoryNames.join(', ')}.`,
+      contents: `Parse shopping items from text: "${text}".
+      
+      STRICT RULES:
+      1. Capitalize first letter of every item (e.g. "Oranges", "Bread").
+      2. PRESERVE GRAMMATICAL NUMBER:
+         - "Apples" -> "Apples"
+         - "Apple" -> "Apple"
+         - "10 eggs" -> "Eggs" (quantity handled separately usually, but here just name)
+      3. CONTEXT AWARENESS:
+         - "Pizza" -> Single item "Pizza" (DishName: null).
+         - "Ingredients for pizza", "Pizza kit", "Everything for soup" -> List ingredients (DishName: "Pizza").
+      
+      Categories: ${categoryNames.join(', ')}.`,
       config: { 
         responseMimeType: "application/json",
         responseSchema: {
@@ -175,10 +194,10 @@ export const analyzeHistoryForSets = async (logs: PurchaseLog[], availableCatego
     const ai = new GoogleGenAI({ apiKey: API_KEY });
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
-      contents: `Проанализируй историю покупок и предложи 3 логичных набора товаров, которые часто покупаются вместе или регулярно.
-      История: ${JSON.stringify(historySummary)}.
-      Используй категории: ${categoryNames.join(', ')}.
-      Для каждого набора придумай название, эмодзи и список товаров.`,
+      contents: `Analyze history and suggest 3 logical shopping sets.
+      History: ${JSON.stringify(historySummary)}.
+      Categories: ${categoryNames.join(', ')}.
+      Rule: Capitalize all item names.`,
       config: { 
         responseMimeType: "application/json",
         responseSchema: {

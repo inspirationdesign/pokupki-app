@@ -21,11 +21,14 @@ const ItemRow: React.FC<{
   onDelete: () => void;
 }> = ({ item, countBadge, onToggle, onEdit, onDelete }) => (
   <div className={`group flex items-center justify-between p-3 transition-all ${item.completed ? 'opacity-50' : 'hover:bg-slate-50 dark:hover:bg-slate-700/30'}`}>
-    <div className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer" onClick={onToggle}>
-      <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all ${item.completed ? 'bg-primary border-primary text-white' : 'border-slate-300 dark:border-slate-600'}`}>
+    <div className="flex items-center gap-3 flex-1 min-w-0">
+      <div 
+        onClick={(e) => { e.stopPropagation(); onToggle(); }}
+        className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all cursor-pointer ${item.completed ? 'bg-primary border-primary text-white' : 'border-slate-300 dark:border-slate-600'}`}
+      >
           {item.completed && <Icons.Check size={12} strokeWidth={4} />}
       </div>
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 cursor-default" onClick={(e) => e.stopPropagation()}>
           <p className={`font-bold text-sm truncate transition-all ${item.completed ? 'line-through text-slate-400' : ''}`}>{item.name}</p>
       </div>
       {countBadge && (
@@ -98,6 +101,10 @@ const App: React.FC = () => {
   // Partial Set Add Modal State
   const [partialSetModal, setPartialSetModal] = useState<{ isOpen: boolean, set: ShoppingSet | null, selectedIndices: number[] }>({ isOpen: false, set: null, selectedIndices: [] });
 
+  // Voice Parsed Editing
+  const [editingParsedIndex, setEditingParsedIndex] = useState<number | null>(null);
+  const [editingParsedName, setEditingParsedName] = useState('');
+
   // State to handle item update after creating a new category
   const [itemToUpdateAfterCategory, setItemToUpdateAfterCategory] = useState<{ id?: string, name: string, onList: boolean } | null>(null);
 
@@ -123,8 +130,12 @@ const App: React.FC = () => {
   const [newSetName, setNewSetName] = useState('');
   const [newSetEmoji, setNewSetEmoji] = useState('📦');
   const [newSetManualItems, setNewSetManualItems] = useState('');
-  const [setCreationMode, setSetCreationMode] = useState<'manual' | 'history'>('manual');
+  const [setCreationMode, setSetCreationMode] = useState<'text' | 'history' | 'ai'>('text');
   const [selectedHistoryItems, setSelectedHistoryItems] = useState<string[]>([]);
+  // New state for AI generated set preview
+  const [aiSetPreviewItems, setAiSetPreviewItems] = useState<{ name: string, categoryName: string, emoji: string }[]>([]);
+  const [editingAiSetIndex, setEditingAiSetIndex] = useState<number | null>(null);
+  const [editingAiSetName, setEditingAiSetName] = useState('');
   
   const [parsedItems, setParsedItems] = useState<any[]>([]);
   const [detectedDishName, setDetectedDishName] = useState<string | null>(null);
@@ -633,7 +644,7 @@ const App: React.FC = () => {
 
     let setItems: { name: string, categoryName: string, emoji: string }[] = [];
 
-    if (setCreationMode === 'manual') {
+    if (setCreationMode === 'text') {
         if (!newSetManualItems.trim()) return;
         const rawItems = newSetManualItems.split('\n').map(s => s.trim()).filter(s => s !== '');
         setItems = rawItems.map(name => {
@@ -645,7 +656,7 @@ const App: React.FC = () => {
                 emoji: cat.emoji || '📦'
             };
         });
-    } else {
+    } else if (setCreationMode === 'history') {
         // History mode
         if (selectedHistoryItems.length === 0) return;
         setItems = selectedHistoryItems.map(id => {
@@ -658,6 +669,9 @@ const App: React.FC = () => {
                 emoji: cat.emoji || '📦'
             };
         }).filter(i => i !== null) as any;
+    } else if (setCreationMode === 'ai') {
+        if (aiSetPreviewItems.length === 0) return;
+        setItems = aiSetPreviewItems;
     }
 
     if (editingSet) {
@@ -680,8 +694,9 @@ const App: React.FC = () => {
     setNewSetName('');
     setNewSetEmoji('📦');
     setNewSetManualItems('');
-    setSetCreationMode('manual');
+    setSetCreationMode('text');
     setSelectedHistoryItems([]);
+    setAiSetPreviewItems([]);
   };
 
   const handleAnalyzeHistory = async () => {
@@ -755,10 +770,10 @@ const App: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen pb-40 bg-slate-50 dark:bg-[#020617] text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300">
+    <div className="min-h-screen pb-40 bg-slate-50 dark:bg-[#020617] text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300 relative">
       
       {toast && (
-        <div className="fixed top-6 left-0 right-0 z-[400] flex justify-center pointer-events-none px-4">
+        <div className="fixed top-6 left-0 right-0 z-[1000] flex justify-center pointer-events-none px-4">
           <div className="w-full max-w-xs animate-bounce-short pointer-events-auto">
             <div className={`py-2.5 px-5 rounded-2xl shadow-xl text-center font-bold text-xs ${toast.isError ? 'bg-red-500 text-white' : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'}`}>
               {toast.message}
@@ -768,7 +783,7 @@ const App: React.FC = () => {
       )}
 
       {(showUndoToast || showCompletedUndoToast) && (
-        <div className="fixed bottom-24 left-0 right-0 z-[150] flex justify-center pointer-events-none px-4">
+        <div className="fixed bottom-28 left-0 right-0 z-[150] flex justify-center pointer-events-none px-4">
           <div className="bg-slate-950/90 dark:bg-slate-900/90 backdrop-blur-md text-white py-3 px-6 rounded-full shadow-2xl flex items-center gap-6 font-bold text-sm animate-bounce-short border border-white/5 pointer-events-auto">
             <span className="opacity-60">{showUndoToast ? 'Удалено' : 'Куплено'}</span>
             <button onClick={showUndoToast ? () => { if(lastDeletedItem) setItems(p => [lastDeletedItem, ...p]); setShowUndoToast(false); } : undoCompletion} className="text-primary hover:text-white transition-colors uppercase tracking-widest font-black text-xs">Отменить</button>
@@ -777,7 +792,7 @@ const App: React.FC = () => {
       )}
 
       {viewMode === 'buy' && (
-        <div className="fixed bottom-24 right-6 z-40 flex flex-col gap-3">
+        <div className="fixed bottom-24 right-6 z-[60] flex flex-col gap-3 pointer-events-auto">
             <button onClick={startVoiceDictation} className={`w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-xl backdrop-blur-md border ${isRecording ? 'bg-red-500 text-white animate-pulse border-red-500' : 'bg-primary text-white border-transparent'}`}>
             {isAiLoading ? <Icons.Loader2 className="animate-spin" /> : <Icons.Mic size={24} />}
             </button>
@@ -811,7 +826,7 @@ const App: React.FC = () => {
         )}
       </header>
 
-      <main className="max-w-xl mx-auto px-4 pt-4">
+      <main className="max-w-xl mx-auto px-4 pt-4 relative z-10">
         {viewMode === 'buy' && (
           <div className="space-y-4 pb-10">
             {completedToday.length > 0 && (
@@ -972,7 +987,16 @@ const App: React.FC = () => {
                       Вы можете добавить набор вручную кнопкой ниже или запустить AI-анализ в <b className="font-black uppercase tracking-widest text-[9px]">Календаре</b>, чтобы система предложила наборы на основе вашей истории покупок.
                     </p>
                     <button 
-                      onClick={() => { setEditingSet(null); setNewSetName(''); setNewSetEmoji('📦'); setNewSetManualItems(''); setIsSetModalOpen(true); }} 
+                      onClick={() => { 
+                        setEditingSet(null); 
+                        setNewSetName(''); 
+                        setNewSetEmoji('📦'); 
+                        setNewSetManualItems(''); 
+                        setSetCreationMode('text');
+                        setSelectedHistoryItems([]);
+                        setAiSetPreviewItems([]);
+                        setIsSetModalOpen(true); 
+                      }} 
                       className="px-8 py-4 bg-primary text-white rounded-2xl font-black uppercase text-[10px] tracking-widest hover:opacity-90 active:scale-95 transition-all"
                     >
                       Создать набор
@@ -1003,6 +1027,9 @@ const App: React.FC = () => {
                             setNewSetName(set.name);
                             setNewSetEmoji(set.emoji || '📦');
                             setNewSetManualItems(set.items.map(it => it.name).join('\n'));
+                            setSetCreationMode('text');
+                            setSelectedHistoryItems([]);
+                            setAiSetPreviewItems([]);
                             setIsSetModalOpen(true);
                           }} className="p-2 text-slate-300 hover:text-primary transition-colors"><Icons.Pencil size={16} /></button>
                           <button onClick={() => deleteSet(set)} className="p-2 text-slate-300 hover:text-red-500 transition-colors"><Icons.Trash2 size={16} /></button>
@@ -1022,7 +1049,16 @@ const App: React.FC = () => {
                   );
                 })}
                 <button 
-                  onClick={() => { setEditingSet(null); setNewSetName(''); setNewSetEmoji('📦'); setNewSetManualItems(''); setIsSetModalOpen(true); }} 
+                  onClick={() => { 
+                    setEditingSet(null); 
+                    setNewSetName(''); 
+                    setNewSetEmoji('📦'); 
+                    setNewSetManualItems(''); 
+                    setSetCreationMode('text');
+                    setSelectedHistoryItems([]);
+                    setAiSetPreviewItems([]);
+                    setIsSetModalOpen(true); 
+                  }} 
                   className="w-full py-4 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all mt-4 mb-2 border-2 border-dashed border-slate-300 dark:border-slate-700 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 active:scale-[0.98] rounded-xl"
                 >
                   <Icons.Plus size={16} /> Создать набор
@@ -1033,6 +1069,7 @@ const App: React.FC = () => {
         )}
       </main>
 
+      {/* RESTORED ADD ITEM MODAL */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-[500] flex items-end justify-center bg-black/60 backdrop-blur-sm" onClick={() => setIsAddModalOpen(false)}>
            <div className="w-full max-w-xl bg-white dark:bg-slate-900 rounded-t-[32px] px-6 pb-6 pt-4 shadow-2xl animate-bounce-short overflow-hidden" onClick={e => e.stopPropagation()}>
@@ -1529,7 +1566,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* VOICE PARSED MODAL */}
+      {/* VOICE PARSED MODAL - MOVED TO END TO ENSURE VISIBILITY */}
       {isParsedModalOpen && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-6 bg-black/60 backdrop-blur-md">
           <div className="bg-white dark:bg-slate-900 w-full max-sm rounded-[32px] pt-5 px-8 pb-8 shadow-2xl flex flex-col max-h-[85vh]">
@@ -1541,9 +1578,40 @@ const App: React.FC = () => {
                   <button onClick={() => setParsedItems(p => p.map((it, i) => i === idx ? { ...it, selected: !it.selected } : it))} className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${item.selected ? 'bg-primary border-primary' : 'border-slate-300'}`}>
                     {item.selected && <Icons.Check size={10} className="text-white" strokeWidth={4} />}
                   </button>
-                  <div className="flex-1 truncate">
-                    <p className="font-bold text-sm truncate">{item.name}</p>
-                    <p className="text-[10px] opacity-40">{item.categoryName}</p>
+                  <div className="flex-1 min-w-0">
+                    {editingParsedIndex === idx ? (
+                      <input 
+                        autoFocus
+                        className="w-full bg-white dark:bg-slate-900 border-b-2 border-primary outline-none text-sm font-bold"
+                        value={editingParsedName}
+                        onChange={(e) => setEditingParsedName(e.target.value)}
+                        onBlur={() => {
+                          if (editingParsedName.trim()) {
+                            setParsedItems(p => p.map((it, i) => i === idx ? { ...it, name: editingParsedName } : it));
+                          }
+                          setEditingParsedIndex(null);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            if (editingParsedName.trim()) {
+                                setParsedItems(p => p.map((it, i) => i === idx ? { ...it, name: editingParsedName } : it));
+                            }
+                            setEditingParsedIndex(null);
+                          }
+                        }}
+                      />
+                    ) : (
+                        <div>
+                           <p className="font-bold text-sm truncate">{item.name}</p>
+                           <p className="text-[10px] opacity-40">{item.categoryName}</p>
+                        </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                      {editingParsedIndex !== idx && (
+                          <button onClick={() => { setEditingParsedIndex(idx); setEditingParsedName(item.name); }} className="p-2 text-slate-300 hover:text-primary"><Icons.Pencil size={14} /></button>
+                      )}
+                      <button onClick={() => setParsedItems(p => p.filter((_, i) => i !== idx))} className="p-2 text-slate-300 hover:text-red-500"><Icons.Trash2 size={14} /></button>
                   </div>
                 </div>
               ))}
@@ -1577,7 +1645,7 @@ const App: React.FC = () => {
           <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[32px] pt-5 px-6 pb-6 shadow-2xl flex flex-col h-[85vh] min-h-[500px] animate-bounce-short">
             <ModalHeader 
               title={editingSet ? 'Редактировать набор' : 'Новый набор'} 
-              onClose={() => { setIsSetModalOpen(false); setEditingSet(null); setNewSetName(''); setNewSetEmoji('📦'); setNewSetManualItems(''); setSetCreationMode('manual'); setSelectedHistoryItems([]); }} 
+              onClose={() => { setIsSetModalOpen(false); setEditingSet(null); setNewSetName(''); setNewSetEmoji('📦'); setNewSetManualItems(''); setSetCreationMode('text'); setSelectedHistoryItems([]); setAiSetPreviewItems([]); }} 
             />
             
             <div className="flex gap-3 mb-4 shrink-0">
@@ -1593,12 +1661,15 @@ const App: React.FC = () => {
             </div>
             
             <div className="flex p-1 bg-slate-100 dark:bg-slate-800/50 rounded-2xl mb-4 shrink-0">
-                <button onClick={() => setSetCreationMode('manual')} className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${setCreationMode === 'manual' ? 'bg-white dark:bg-slate-800 shadow-md text-slate-900 dark:text-white' : 'text-slate-400'}`}>Текст / AI</button>
+                <button onClick={() => setSetCreationMode('text')} className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${setCreationMode === 'text' ? 'bg-white dark:bg-slate-800 shadow-md text-slate-900 dark:text-white' : 'text-slate-400'}`}>Текст</button>
                 <button onClick={() => setSetCreationMode('history')} className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${setCreationMode === 'history' ? 'bg-white dark:bg-slate-800 shadow-md text-slate-900 dark:text-white' : 'text-slate-400'}`}>Из истории</button>
+                <button onClick={() => { if(isAiEnabled) setSetCreationMode('ai'); else showToast("Включите ИИ в настройках"); }} className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-1 ${setCreationMode === 'ai' ? 'bg-primary text-white shadow-md' : 'text-slate-400'}`}>
+                    <Icons.Sparkles size={10} /> AI
+                </button>
             </div>
 
             <div className="flex-1 overflow-y-auto scrollbar-hide min-h-0 bg-slate-50 dark:bg-slate-800/30 rounded-2xl p-2 border dark:border-slate-800/50">
-              {setCreationMode === 'manual' ? (
+              {setCreationMode === 'text' ? (
                   <div className="flex flex-col h-full">
                     <p className="text-[10px] font-black uppercase opacity-40 mb-2 px-2 pt-2">Товары (каждый с новой строки)</p>
                     <textarea 
@@ -1608,7 +1679,7 @@ const App: React.FC = () => {
                       className="w-full flex-1 bg-transparent px-3 pb-3 font-bold outline-none focus:ring-0 dark:text-white resize-none" 
                     />
                   </div>
-              ) : (
+              ) : setCreationMode === 'history' ? (
                   <div className="flex flex-col h-full">
                      <p className="text-[10px] font-black uppercase opacity-40 mb-2 px-2 pt-2">Выберите из истории</p>
                      <div className="space-y-2 flex-1">
@@ -1626,40 +1697,94 @@ const App: React.FC = () => {
                         {historyList.length === 0 && <p className="text-center text-slate-400 py-10 text-xs italic">История покупок пуста</p>}
                      </div>
                   </div>
+              ) : (
+                  // AI MODE
+                  <div className="flex flex-col h-full">
+                      {aiSetPreviewItems.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center h-full text-center px-4">
+                              <div className="w-16 h-16 bg-white dark:bg-slate-800 rounded-full flex items-center justify-center mb-4 text-primary">
+                                  <Icons.Bot size={32} />
+                              </div>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mb-6 font-medium">Введите название набора выше и нажмите кнопку, чтобы сгенерировать состав.</p>
+                              <button 
+                                onClick={async () => {
+                                  if (!newSetName.trim()) { showToast("Введите название набора", true); return; }
+                                  setIsAiLoading(true);
+                                  try {
+                                    const result = await generateSetItems(newSetName, categories);
+                                    if (result) {
+                                      setNewSetEmoji(result.setEmoji || '🍱');
+                                      setAiSetPreviewItems(result.items);
+                                    }
+                                  } catch (err) { handleAiError(err); } finally { setIsAiLoading(false); }
+                                }}
+                                disabled={isAiLoading}
+                                className="w-full py-4 bg-primary text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg flex items-center justify-center gap-2"
+                              >
+                                  {isAiLoading ? <Icons.Loader2 className="animate-spin" /> : 'Сгенерировать'}
+                              </button>
+                          </div>
+                      ) : (
+                          <div className="flex flex-col h-full">
+                              <div className="flex items-center justify-between mb-2 px-2 pt-2">
+                                  <p className="text-[10px] font-black uppercase opacity-40">Предложенные товары</p>
+                                  <button onClick={() => setAiSetPreviewItems([])} className="text-[10px] font-black uppercase text-slate-400 hover:text-red-500">Сброс</button>
+                              </div>
+                              <div className="flex-1 overflow-y-auto space-y-2 pr-1 scrollbar-hide pb-2">
+                                  {aiSetPreviewItems.map((item, idx) => (
+                                      <div key={idx} className="flex items-center gap-3 p-3 bg-white dark:bg-slate-800 rounded-2xl border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-colors group">
+                                          <div className="w-5 h-5 rounded flex items-center justify-center border border-slate-300 dark:border-slate-600">
+                                              <Icons.Check size={12} className="text-slate-300" />
+                                          </div>
+                                          <div className="flex-1 min-w-0">
+                                              {editingAiSetIndex === idx ? (
+                                                  <input 
+                                                    autoFocus
+                                                    className="w-full bg-transparent border-b-2 border-primary outline-none text-sm font-bold"
+                                                    value={editingAiSetName}
+                                                    onChange={(e) => setEditingAiSetName(e.target.value)}
+                                                    onBlur={() => {
+                                                      if (editingAiSetName.trim()) {
+                                                        setAiSetPreviewItems(p => p.map((it, i) => i === idx ? { ...it, name: editingAiSetName } : it));
+                                                      }
+                                                      setEditingAiSetIndex(null);
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === 'Enter') {
+                                                        if (editingAiSetName.trim()) {
+                                                            setAiSetPreviewItems(p => p.map((it, i) => i === idx ? { ...it, name: editingAiSetName } : it));
+                                                        }
+                                                        setEditingAiSetIndex(null);
+                                                      }
+                                                    }}
+                                                  />
+                                              ) : (
+                                                  <div>
+                                                      <p className="font-bold text-sm truncate">{item.name}</p>
+                                                      <p className="text-[10px] opacity-40">{item.categoryName}</p>
+                                                  </div>
+                                              )}
+                                          </div>
+                                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                              {editingAiSetIndex !== idx && (
+                                                  <button onClick={() => { setEditingAiSetIndex(idx); setEditingAiSetName(item.name); }} className="p-2 text-slate-300 hover:text-primary"><Icons.Pencil size={14} /></button>
+                                              )}
+                                              <button onClick={() => setAiSetPreviewItems(p => p.filter((_, i) => i !== idx))} className="p-2 text-slate-300 hover:text-red-500"><Icons.Trash2 size={14} /></button>
+                                          </div>
+                                      </div>
+                                  ))}
+                              </div>
+                          </div>
+                      )}
+                  </div>
               )}
             </div>
             
             <div className="mt-4 space-y-3 flex-shrink-0">
               <div className="flex gap-3">
-                <button onClick={() => { setIsSetModalOpen(false); setEditingSet(null); setNewSetName(''); setNewSetEmoji('📦'); setNewSetManualItems(''); setSetCreationMode('manual'); setSelectedHistoryItems([]); }} className="flex-1 font-black uppercase text-[10px] tracking-widest text-slate-400">Отмена</button>
+                <button onClick={() => { setIsSetModalOpen(false); setEditingSet(null); setNewSetName(''); setNewSetEmoji('📦'); setNewSetManualItems(''); setSetCreationMode('text'); setSelectedHistoryItems([]); setAiSetPreviewItems([]); }} className="flex-1 font-black uppercase text-[10px] tracking-widest text-slate-400">Отмена</button>
                 <button onClick={handleManualSetCreate} className="flex-[2] h-14 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black uppercase text-[10px] tracking-widest rounded-2xl shadow-lg hover:opacity-90 transition-opacity">Сохранить</button>
               </div>
-              {!editingSet && isAiEnabled && setCreationMode === 'manual' && (
-                <button onClick={async () => {
-                  if (!newSetName.trim()) return;
-                  setIsAiLoading(true);
-                  try {
-                    const result = await generateSetItems(newSetName, categories);
-                    if (result) {
-                      const newSet: ShoppingSet = {
-                        id: Date.now().toString(),
-                        name: newSetName,
-                        emoji: result.setEmoji || '🍱',
-                        items: result.items,
-                        usageCount: 0
-                      };
-                      setSets(prev => [newSet, ...prev]);
-                      showToast(`Набор "${newSetName}" создан`);
-                      setIsSetModalOpen(false);
-                      setNewSetName('');
-                      setNewSetEmoji('📦');
-                      setNewSetManualItems('');
-                    }
-                  } catch (err) { handleAiError(err); } finally { setIsAiLoading(false); }
-                }} className="w-full h-14 bg-primary text-white font-black uppercase text-[10px] tracking-widest rounded-2xl shadow-lg flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
-                  {isAiLoading ? <Icons.Loader2 className="animate-spin" /> : <><Icons.Bot size={18} /> Сгенерировать ИИ</>}
-                </button>
-              )}
             </div>
           </div>
         </div>
