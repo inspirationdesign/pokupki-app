@@ -210,8 +210,10 @@ const App: React.FC = () => {
     const msg = err?.message || "";
     if (msg.includes('429') || msg.includes('quota')) {
       showToast("Лимит ИИ. Попробуйте через минуту.", true);
+    } else if (msg.includes('API ключ')) {
+        showToast(msg, true);
     } else {
-      showToast("Ошибка сервиса", true);
+      showToast("Ошибка сервиса: " + (msg.slice(0, 20) + '...'), true);
     }
   };
 
@@ -1586,7 +1588,7 @@ const App: React.FC = () => {
                     value={newSetName} 
                     onChange={e => setNewSetName(e.target.value)} 
                     placeholder="Название" 
-                    className="flex-1 px-5 h-16 rounded-[20px] bg-slate-100 dark:bg-slate-800 font-bold outline-none dark:text-white text-lg" 
+                    className="flex-1 min-w-0 px-5 h-16 rounded-[20px] bg-slate-100 dark:bg-slate-800 font-bold outline-none dark:text-white text-lg" 
                 />
             </div>
             

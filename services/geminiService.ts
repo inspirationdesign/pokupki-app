@@ -7,6 +7,8 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 5, delay = 2000)
   try {
     return await fn();
   } catch (error: any) {
+    console.error("[Lumina Service] AI Error Details:", error);
+    
     const isRateLimit = 
       error?.status === 429 || 
       error?.code === 429 ||
@@ -16,6 +18,7 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 5, delay = 2000)
       (error?.error && (error.error.code === 429 || error.error.status === 'RESOURCE_EXHAUSTED'));
 
     if (retries > 0 && isRateLimit) {
+      console.log(`[Lumina Service] Rate limit hit. Retrying in ${delay}ms... (${retries} left)`);
       await new Promise(resolve => setTimeout(resolve, delay));
       return callWithRetry(fn, retries - 1, delay * 1.5);
     }
@@ -25,11 +28,6 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 5, delay = 2000)
 
 // Categorize a single product name into an existing or new category
 export const categorizeProduct = async (productName: string, availableCategories: CategoryDef[]): Promise<SmartCategoryResponse | null> => {
-  if (!process.env.API_KEY) {
-    console.error("Gemini API Key is missing. AI features disabled.");
-    return null;
-  }
-
   const categoryNames = availableCategories.map(c => c.name);
 
   return callWithRetry(async () => {
@@ -60,10 +58,6 @@ export const categorizeProduct = async (productName: string, availableCategories
 
 // Generate a set of shopping items (e.g. ingredients for a dish)
 export const generateSetItems = async (setName: string, availableCategories: CategoryDef[]) => {
-  if (!process.env.API_KEY) {
-    console.error("Gemini API Key is missing. AI features disabled.");
-    return { setEmoji: '📦', items: [] };
-  }
   const categoryNames = availableCategories.map(c => c.name);
 
   return callWithRetry(async () => {
@@ -100,10 +94,6 @@ export const generateSetItems = async (setName: string, availableCategories: Cat
 
 // Parse a dictated string into a list of specific products
 export const parseDictatedText = async (text: string, availableCategories: CategoryDef[]) => {
-  if (!process.env.API_KEY) {
-    console.error("Gemini API Key is missing. AI features disabled.");
-    return { items: [], dishName: null };
-  }
   const categoryNames = availableCategories.map(c => c.name);
 
   return callWithRetry(async () => {
@@ -140,10 +130,6 @@ export const parseDictatedText = async (text: string, availableCategories: Categ
 
 // Analyze purchase history to suggest sets
 export const analyzeHistoryForSets = async (logs: PurchaseLog[], availableCategories: CategoryDef[]) => {
-  if (!process.env.API_KEY) {
-    console.error("Gemini API Key is missing. AI features disabled.");
-    return [];
-  }
   const categoryNames = availableCategories.map(c => c.name);
   
   const historySummary = logs.map(l => ({
