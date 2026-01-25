@@ -879,7 +879,7 @@ const App: React.FC = () => {
             </div>
             
             {historyList.length === 0 ? (
-                <div className="py-20 text-center flex flex-col items-center max-w-sm mx-auto animate-bounce-short px-6">
+                <div className="min-h-[60vh] flex flex-col items-center justify-center text-center max-w-sm mx-auto animate-bounce-short px-6">
                     <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-[32px] flex items-center justify-center text-slate-400 mb-6 shadow-sm">
                       <Icons.History size={40} strokeWidth={1.5} />
                     </div>
