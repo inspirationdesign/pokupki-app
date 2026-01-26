@@ -152,6 +152,7 @@ const App: React.FC = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isAiAnalysisModalOpen, setIsAiAnalysisModalOpen] = useState(false);
   const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+  const [isBulkAddModalOpen, setIsBulkAddModalOpen] = useState(false);
   
   const [deleteConfirmModal, setDeleteConfirmModal] = useState<{ isOpen: boolean, categoryId: string | null }>({ isOpen: false, categoryId: null });
   const [itemDeleteConfirmModal, setItemDeleteConfirmModal] = useState<{ isOpen: boolean, item: ProductItem | null }>({ isOpen: false, item: null });
@@ -206,6 +207,10 @@ const App: React.FC = () => {
 
   const [addItemText, setAddItemText] = useState('');
   const [addItemCategory, setAddItemCategory] = useState<string>('dept_none');
+
+  // Bulk Add State
+  const [bulkAddCategory, setBulkAddCategory] = useState<string | null>(null);
+  const [bulkAddText, setBulkAddText] = useState('');
 
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<number | null>(new Date().setHours(0,0,0,0));
   const [toast, setToast] = useState<{ id: string, message: string, isError?: boolean } | null>(null);
@@ -263,6 +268,22 @@ const App: React.FC = () => {
       return item;
     }));
   }, []);
+
+  // AUTO-REDIRECT TO ALL EFFECT
+  useEffect(() => {
+    if (selectedCategoryFilter === 'All') return;
+
+    // Check if there are any active (uncompleted) items left in the selected category
+    const hasActiveItems = items.some(
+      i => i.onList && !i.completed && i.categoryId === selectedCategoryFilter
+    );
+
+    if (!hasActiveItems) {
+      // Small timeout to allow UI to update tick check before switching
+      const t = setTimeout(() => setSelectedCategoryFilter('All'), 300);
+      return () => clearTimeout(t);
+    }
+  }, [items, selectedCategoryFilter]);
 
   const categoryRankings = useMemo(() => {
     const rankings: Record<string, number> = {};
@@ -330,6 +351,13 @@ const App: React.FC = () => {
 
   const addSpecificItemsFromSet = (set: ShoppingSet, itemsToAdd: { name: string; categoryName: string; emoji: string }[]) => {
     let updatedCats = [...categories];
+    // Helper to ensure dept_none is last
+    const reorderCats = (cats: CategoryDef[]) => {
+       const others = cats.filter(c => c.id !== 'dept_none');
+       const none = cats.find(c => c.id === 'dept_none') || { id: 'dept_none', name: 'Без категории', emoji: '⚪' };
+       return [...others, none];
+    };
+
     itemsToAdd.forEach(setItem => {
       const historyItem = items.find(i => i.name.toLowerCase() === setItem.name.toLowerCase());
       if (historyItem) {
@@ -343,7 +371,7 @@ const App: React.FC = () => {
         finalizeAddItem(setItem.name, cat.id);
       }
     });
-    setCategories(updatedCats);
+    setCategories(reorderCats(updatedCats));
     setAddedSetIds(prev => [...prev, set.id]);
     setSets(prev => prev.map(s => s.id === set.id ? { ...s, usageCount: (s.usageCount || 0) + 1 } : s));
     showToast(itemsToAdd.length === set.items.length ? `Набор "${set.name}" добавлен` : `Добавлено ${itemsToAdd.length} товаров из набора`);
@@ -379,7 +407,12 @@ const App: React.FC = () => {
         let existingCat = categories.find(c => c.name.toLowerCase() === smart.categoryName.toLowerCase());
         if (!existingCat) {
           const newCat = { id: 'dept_' + Date.now(), name: smart.categoryName, emoji: smart.suggestedEmoji || '📦' };
-          setCategories(prev => [...prev, newCat]);
+          // Ensure new categories are added before 'dept_none'
+          setCategories(prev => {
+             const others = prev.filter(c => c.id !== 'dept_none');
+             const none = prev.find(c => c.id === 'dept_none') || { id: 'dept_none', name: 'Без категории', emoji: '⚪' };
+             return [...others, newCat, none];
+          });
           targetId = newCat.id;
         } else targetId = existingCat.id;
       }
@@ -388,6 +421,22 @@ const App: React.FC = () => {
       finalizeAddItem(name, 'dept_none', onList);
       handleAiError(err);
     } finally { setIsAiLoading(false); }
+  };
+
+  const handleBulkAdd = () => {
+    if (!bulkAddText.trim() || !bulkAddCategory) return;
+    const lines = bulkAddText.split('\n').map(l => l.trim()).filter(l => l);
+    lines.forEach(name => finalizeAddItem(name, bulkAddCategory, viewMode === 'buy')); // onList is true if we are in buy mode, otherwise standard behavior (could be just to history)
+    
+    // Actually, finalizeAddItem third arg 'onList' defaults to true.
+    // If we are in History view, adding an item usually means adding to database AND potentially to list?
+    // The previous logic for single item add in history was `finalizeAddItem(..., ..., true)`.
+    // So default behavior is correct.
+    
+    setIsBulkAddModalOpen(false);
+    setBulkAddText('');
+    setBulkAddCategory(null);
+    showToast(`Добавлено ${lines.length} товаров`);
   };
 
   const toggleComplete = (id: string) => {
@@ -558,21 +607,24 @@ const App: React.FC = () => {
   const saveCategory = () => {
     if (!catName.trim()) return;
     const newCatId = 'dept_' + Date.now();
-    if (editingCategory) {
-      setCategories(prev => prev.map(c => c.id === editingCategory.id ? { ...c, name: catName, emoji: catEmoji } : c));
-    } else {
-      setCategories(prev => {
-          // Вставляем новую категорию перед системной «Без категории»
-          const list = [...prev];
-          const noneIndex = list.findIndex(c => c.id === 'dept_none');
-          if (noneIndex !== -1) {
-              list.splice(noneIndex, 0, { id: newCatId, name: catName, emoji: catEmoji });
-              return list;
-          }
-          return [...prev, { id: newCatId, name: catName, emoji: catEmoji }];
-      });
+    
+    setCategories(prev => {
+      // Filter out existing edited category and the system 'No Category'
+      const others = prev.filter(c => c.id !== 'dept_none' && (editingCategory ? c.id !== editingCategory.id : true));
       
-      if (itemToUpdateAfterCategory) {
+      const newCat: CategoryDef = { 
+        id: editingCategory ? editingCategory.id : newCatId, 
+        name: catName, 
+        emoji: catEmoji 
+      };
+      
+      const systemNone = prev.find(c => c.id === 'dept_none') || { id: 'dept_none', name: 'Без категории', emoji: '⚪' };
+      
+      // Always put new/edited category before system 'No Category'
+      return [...others, newCat, systemNone];
+    });
+
+    if (!editingCategory && itemToUpdateAfterCategory) {
         if (itemToUpdateAfterCategory.id) {
             setItems(prev => prev.map(i => i.id === itemToUpdateAfterCategory.id ? { ...i, name: itemToUpdateAfterCategory.name, categoryId: newCatId } : i));
         } else {
@@ -580,8 +632,8 @@ const App: React.FC = () => {
         }
         setItemToUpdateAfterCategory(null);
         showToast("Товар обновлен");
-      }
     }
+    
     setIsCategoryModalOpen(false);
   };
 
@@ -937,9 +989,9 @@ const App: React.FC = () => {
         
         {viewMode === 'buy' && sortedActiveCategories.length > 0 && (
           <div className="max-w-xl mx-auto pl-6 pb-3 overflow-x-auto scrollbar-hide flex items-center gap-2 pr-6 border-t dark:border-slate-800/50 pt-3">
-              <button onClick={() => setSelectedCategoryFilter('All')} className={`whitespace-nowrap px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${selectedCategoryFilter === 'All' ? 'bg-primary text-white' : 'bg-white dark:bg-slate-800 border dark:border-slate-700 text-slate-500'}`}>Все</button>
+              <button onClick={() => setSelectedCategoryFilter('All')} className={`whitespace-nowrap px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border-2 ${selectedCategoryFilter === 'All' ? 'bg-primary text-white border-primary' : 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-500'}`}>Все</button>
               {sortedActiveCategories.map(cat => (
-                  <button key={cat.id} onClick={() => setSelectedCategoryFilter(cat.id)} className={`whitespace-nowrap px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${selectedCategoryFilter === cat.id ? 'bg-primary text-white' : 'bg-white dark:bg-slate-800 border dark:border-slate-700 text-slate-500'}`}>
+                  <button key={cat.id} onClick={() => setSelectedCategoryFilter(cat.id)} className={`whitespace-nowrap px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 border-2 ${selectedCategoryFilter === cat.id ? 'bg-primary text-white border-primary' : 'bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-500'}`}>
                     <span>{cat.emoji}</span> {cat.name}
                   </button>
               ))}
@@ -964,7 +1016,7 @@ const App: React.FC = () => {
                       setIsEditModalOpen(true); 
                     }} onDelete={() => deleteItem(item)} />
                   ))}
-                  <button onClick={() => { setAddItemCategory(group.cat.id); setAddItemText(''); setIsAddModalOpen(true); }} className="w-full py-2.5 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-300 hover:text-primary transition-all">
+                  <button onClick={() => { setBulkAddCategory(group.cat.id); setBulkAddText(''); setIsBulkAddModalOpen(true); }} className="w-full py-2.5 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-300 hover:text-primary transition-all">
                       <Icons.Plus size={12} /> Добавить
                   </button>
                 </div>
@@ -973,7 +1025,7 @@ const App: React.FC = () => {
             
             {activeGroups.length > 0 && boughtTodayNode}
             
-            {activeGroups.length === 0 && (
+            {activeGroups.length === 0 && selectedCategoryFilter === 'All' && (
                 <div className="py-20 text-center flex flex-col items-center max-w-sm mx-auto animate-bounce-short px-6">
                     <div className="w-20 h-20 bg-slate-100 dark:bg-slate-800 rounded-[32px] flex items-center justify-center text-slate-400 mb-6 shadow-sm">
                       <Icons.ShoppingBag size={40} strokeWidth={1.5} />
@@ -1056,7 +1108,7 @@ const App: React.FC = () => {
                                 </button>
                             </div>
                           ))}
-                          <button onClick={() => { setAddItemCategory(group.cat.id); setAddItemText(''); setIsAddModalOpen(true); }} className="w-full py-4 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-300 hover:text-primary transition-all">
+                          <button onClick={() => { setBulkAddCategory(group.cat.id); setBulkAddText(''); setIsBulkAddModalOpen(true); }} className="w-full py-4 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-300 hover:text-primary transition-all">
                             <Icons.Plus size={12} /> Добавить товар
                           </button>
                         </div>
@@ -1200,6 +1252,123 @@ const App: React.FC = () => {
                  )}
               </div>
            </div>
+        </div>
+      )}
+
+      {/* BULK ADD MODAL */}
+      {isBulkAddModalOpen && bulkAddCategory && (
+        <div className="fixed inset-0 z-[600] flex items-center justify-center p-6 bg-black/60 backdrop-blur-md">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[32px] pt-5 px-6 pb-6 shadow-2xl flex flex-col h-[70vh] min-h-[400px] animate-bounce-short">
+            <ModalHeader 
+              title={(() => {
+                const cat = categories.find(c => c.id === bulkAddCategory);
+                return cat ? `Добавить в ${cat.name}` : 'Добавить товары';
+              })()}
+              onClose={() => setIsBulkAddModalOpen(false)} 
+            />
+            
+            <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-2 px-1">Введите товары (каждый с новой строки)</p>
+            <div className="flex-1 bg-slate-50 dark:bg-slate-800/30 rounded-2xl p-4 border dark:border-slate-800/50 mb-4">
+              <textarea 
+                autoFocus
+                value={bulkAddText} 
+                onChange={e => setBulkAddText(e.target.value)} 
+                placeholder="Молоко&#10;Хлеб&#10;Масло..." 
+                className="w-full h-full bg-transparent resize-none outline-none font-bold text-sm dark:text-white placeholder:text-slate-400" 
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => setIsBulkAddModalOpen(false)} className="flex-1 font-black uppercase text-[10px] tracking-widest text-slate-400">Отмена</button>
+              <button onClick={handleBulkAdd} className="flex-[2] h-14 bg-primary text-white font-black uppercase text-[10px] tracking-widest rounded-2xl shadow-lg hover:opacity-90 transition-opacity">Добавить все</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PARSED ITEMS MODAL (RESTORED & FIXED) */}
+      {isParsedModalOpen && (
+        <div className="fixed inset-0 z-[600] flex items-center justify-center p-6 bg-black/60 backdrop-blur-md">
+            <div className="bg-white dark:bg-slate-900 w-full max-sm rounded-[32px] pt-5 px-6 pb-6 shadow-2xl flex flex-col h-auto max-h-[85vh] animate-bounce-short">
+                <ModalHeader title="Голосовой разбор" onClose={() => setIsParsedModalOpen(false)} />
+                
+                {detectedDishName && detectedDishName !== 'null' && (
+                    <p className="text-[10px] font-black uppercase tracking-widest opacity-40 mb-4">
+                        Обнаружено: {detectedDishName}
+                    </p>
+                )}
+
+                <div className="flex-1 overflow-y-auto space-y-2 pr-1 scrollbar-hide">
+                    {parsedItems.map((item, idx) => (
+                        <div key={idx} className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-transparent dark:border-slate-800">
+                             <div 
+                                onClick={() => setParsedItems(p => p.map((it, i) => i === idx ? { ...it, selected: !it.selected } : it))}
+                                className={`w-6 h-6 rounded-full flex items-center justify-center border-2 transition-all cursor-pointer ${item.selected ? 'bg-primary border-primary' : 'border-slate-300 dark:border-slate-600'}`}
+                             >
+                                 {item.selected && <Icons.Check size={14} className="text-white" strokeWidth={4} />}
+                             </div>
+                             <div className="flex-1 min-w-0">
+                                 {editingParsedIndex === idx ? (
+                                     <input 
+                                        autoFocus
+                                        className="w-full bg-transparent border-b-2 border-primary outline-none text-sm font-bold"
+                                        value={editingParsedName}
+                                        onChange={e => setEditingParsedName(e.target.value)}
+                                        onBlur={() => {
+                                            if(editingParsedName.trim()) setParsedItems(p => p.map((it, i) => i === idx ? { ...it, name: editingParsedName } : it));
+                                            setEditingParsedIndex(null);
+                                        }}
+                                     />
+                                 ) : (
+                                     <div onClick={() => { setEditingParsedIndex(idx); setEditingParsedName(item.name); }}>
+                                        <p className="font-bold text-sm truncate">{item.name}</p>
+                                        <p className="text-[10px] opacity-40">{item.categoryName}</p>
+                                     </div>
+                                 )}
+                             </div>
+                             <div className="flex gap-1">
+                                <button onClick={() => { setEditingParsedIndex(idx); setEditingParsedName(item.name); }} className="p-2 text-slate-300 hover:text-primary"><Icons.Pencil size={16} /></button>
+                                <button onClick={() => setParsedItems(p => p.filter((_, i) => i !== idx))} className="p-2 text-slate-300 hover:text-red-500"><Icons.Trash2 size={16} /></button>
+                             </div>
+                        </div>
+                    ))}
+                </div>
+                
+                <div className="flex gap-3 mt-6">
+                    <button onClick={() => setIsParsedModalOpen(false)} className="flex-1 font-black uppercase text-[10px] tracking-widest text-slate-400">Отмена</button>
+                    <button 
+                        onClick={() => {
+                            const toAdd = parsedItems.filter(i => i.selected);
+                            let updatedCats = [...categories];
+                            const reorderCats = (cats: CategoryDef[]) => {
+                               const others = cats.filter(c => c.id !== 'dept_none');
+                               const none = cats.find(c => c.id === 'dept_none') || { id: 'dept_none', name: 'Без категории', emoji: '⚪' };
+                               return [...others, none];
+                            };
+
+                            toAdd.forEach(pItem => {
+                                const historyItem = items.find(i => i.name.toLowerCase() === pItem.name.toLowerCase());
+                                if (historyItem) {
+                                    finalizeAddItem(pItem.name, historyItem.categoryId);
+                                } else {
+                                    let cat = updatedCats.find(c => c.name.toLowerCase() === pItem.categoryName.toLowerCase());
+                                    if (!cat) {
+                                        cat = { id: 'dept_' + Date.now() + Math.random(), name: pItem.categoryName, emoji: pItem.suggestedEmoji || '📦' };
+                                        updatedCats.push(cat);
+                                    }
+                                    finalizeAddItem(pItem.name, cat.id);
+                                }
+                            });
+                            setCategories(reorderCats(updatedCats));
+                            setIsParsedModalOpen(false);
+                            showToast(`Добавлено ${toAdd.length} товаров`);
+                        }} 
+                        className="flex-[2] h-14 bg-primary text-white font-black uppercase text-[10px] tracking-widest rounded-2xl shadow-lg hover:opacity-90 transition-opacity"
+                    >
+                        Добавить всё
+                    </button>
+                </div>
+            </div>
         </div>
       )}
 
@@ -1642,79 +1811,6 @@ const App: React.FC = () => {
             <div className="flex gap-3">
                 <button onClick={() => setDeleteSetConfirmModal({ isOpen: false, set: null })} className="flex-1 font-black uppercase text-[10px] tracking-widest text-slate-400">Отмена</button>
                 <button onClick={() => performSetDelete(deleteSetConfirmModal.set!)} className="flex-[2] h-14 bg-red-500 text-white font-black uppercase text-[10px] tracking-widest rounded-2xl shadow-lg shadow-red-500/20">Удалить</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* VOICE PARSED MODAL - MOVED TO END TO ENSURE VISIBILITY */}
-      {isParsedModalOpen && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-6 bg-black/60 backdrop-blur-md">
-          <div className="bg-white dark:bg-slate-900 w-full max-sm rounded-[32px] pt-5 px-8 pb-8 shadow-2xl flex flex-col max-h-[85vh]">
-            <ModalHeader title="Голосовой разбор" onClose={() => setIsParsedModalOpen(false)} />
-            {detectedDishName && <p className="text-[10px] font-black uppercase opacity-40 mb-4 tracking-widest">Обнаружено: {detectedDishName}</p>}
-            <div className="flex-1 overflow-y-auto space-y-2 mb-6 pr-1 scrollbar-hide">
-              {parsedItems.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl border dark:border-slate-700">
-                  <button onClick={() => setParsedItems(p => p.map((it, i) => i === idx ? { ...it, selected: !it.selected } : it))} className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${item.selected ? 'bg-primary border-primary' : 'border-slate-300'}`}>
-                    {item.selected && <Icons.Check size={10} className="text-white" strokeWidth={4} />}
-                  </button>
-                  <div className="flex-1 min-w-0">
-                    {editingParsedIndex === idx ? (
-                      <input 
-                        autoFocus
-                        className="w-full bg-white dark:bg-slate-900 border-b-2 border-primary outline-none text-sm font-bold"
-                        value={editingParsedName}
-                        onChange={(e) => setEditingParsedName(e.target.value)}
-                        onBlur={() => {
-                          if (editingParsedName.trim()) {
-                            setParsedItems(p => p.map((it, i) => i === idx ? { ...it, name: editingParsedName } : it));
-                          }
-                          setEditingParsedIndex(null);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            if (editingParsedName.trim()) {
-                                setParsedItems(p => p.map((it, i) => i === idx ? { ...it, name: editingParsedName } : it));
-                            }
-                            setEditingParsedIndex(null);
-                          }
-                        }}
-                      />
-                    ) : (
-                        <div>
-                           <p className="font-bold text-sm truncate">{item.name}</p>
-                           <p className="text-[10px] opacity-40">{item.categoryName}</p>
-                        </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1">
-                      {editingParsedIndex !== idx && (
-                          <button onClick={() => { setEditingParsedIndex(idx); setEditingParsedName(item.name); }} className="p-2 text-slate-300 hover:text-primary"><Icons.Pencil size={14} /></button>
-                      )}
-                      <button onClick={() => setParsedItems(p => p.filter((_, i) => i !== idx))} className="p-2 text-slate-300 hover:text-red-500"><Icons.Trash2 size={14} /></button>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setIsParsedModalOpen(false)} className="flex-1 font-black uppercase text-[10px] tracking-widest text-slate-400">Отмена</button>
-              <button onClick={() => {
-                  const toAdd = parsedItems.filter(p => p.selected);
-                  let updatedCats = [...categories];
-                  toAdd.forEach(p => {
-                      const historyItem = items.find(i => i.name.toLowerCase() === p.name.toLowerCase());
-                      if (historyItem) { finalizeAddItem(p.name, historyItem.categoryId); return; }
-                      let cat = updatedCats.find(c => c.name.toLowerCase() === p.categoryName.toLowerCase());
-                      if (!cat) {
-                          cat = { id: 'dept_' + Date.now() + Math.random(), name: p.categoryName, emoji: p.suggestedEmoji };
-                          updatedCats.push(cat);
-                      }
-                      finalizeAddItem(p.name, cat.id);
-                  });
-                  setCategories(updatedCats);
-                  setIsParsedModalOpen(false);
-              }} className="flex-[2] h-14 bg-primary text-white font-black uppercase text-[10px] tracking-widest rounded-2xl shadow-lg hover:opacity-90 transition-opacity">Добавить всё</button>
             </div>
           </div>
         </div>
