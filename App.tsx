@@ -123,8 +123,8 @@ const App: React.FC = () => {
   });
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('lumina_dark') === 'true');
   
-  // AI is enabled by default unless explicitly disabled
-  const [isAiEnabled, setIsAiEnabled] = useState(() => localStorage.getItem('lumina_ai_enabled') !== 'false');
+  // AI is disabled by default unless explicitly enabled
+  const [isAiEnabled, setIsAiEnabled] = useState(() => localStorage.getItem('lumina_ai_enabled') === 'true');
   
   const [confirmDelete, setConfirmDelete] = useState(() => localStorage.getItem('lumina_confirm_delete') !== 'false');
   const [confirmItemDelete, setConfirmItemDelete] = useState(() => localStorage.getItem('lumina_confirm_item_delete') !== 'false');
@@ -1159,7 +1159,7 @@ const App: React.FC = () => {
                  <div className="relative flex items-center bg-slate-100 dark:bg-slate-800 rounded-3xl px-6 py-4">
                     <input autoFocus value={addItemText} onChange={e => setAddItemText(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleAddItemFromModal(undefined, viewMode !== 'history')} placeholder={viewMode === 'history' ? "Название товара" : "Что купить?"} className="flex-1 bg-transparent text-lg font-bold border-none outline-none dark:text-white placeholder:text-slate-400" />
                     {addItemText.length > 0 && (
-                        <button onClick={() => handleAddItemFromModal(undefined, viewMode !== 'history')} className="ml-2 w-10 h-10 bg-primary text-white rounded-2xl flex items-center justify-center shadow-lg active:scale-95 transition-all">
+                        <button onClick={() => handleAddItemFromModal(undefined, viewMode !== 'history')} className="ml-2 w-10 h-10 bg-primary text-white rounded-2xl flex items-center justify-center shadow-lg active:scale-95 transition-all flex-shrink-0">
                           <Icons.Plus size={24} />
                         </button>
                     )}
