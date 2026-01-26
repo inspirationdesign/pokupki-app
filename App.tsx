@@ -44,6 +44,66 @@ const ItemRow: React.FC<{
   </div>
 );
 
+const SetCard: React.FC<{
+  set: ShoppingSet;
+  isAdded: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+  onAdd: () => void;
+}> = ({ set, isAdded, onEdit, onDelete, onAdd }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  return (
+    <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl shadow-sm transition-all">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <span className="text-4xl">{set.emoji}</span>
+          <h3 className="font-black truncate max-w-[140px]">{set.name}</h3>
+          {set.usageCount !== undefined && set.usageCount > 0 && (
+            <div className="w-6 h-6 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center text-[10px] font-black text-slate-400 shadow-inner">
+              {set.usageCount}
+            </div>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={onEdit} className="p-2 text-slate-300 hover:text-primary transition-colors"><Icons.Pencil size={16} /></button>
+          <button onClick={onDelete} className="p-2 text-slate-300 hover:text-red-500 transition-colors"><Icons.Trash2 size={16} /></button>
+        </div>
+      </div>
+
+      <div className="mb-4">
+        <button 
+          onClick={() => setIsExpanded(!isExpanded)} 
+          className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800/50 hover:bg-slate-200 dark:hover:bg-slate-700/50 transition-colors"
+        >
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 text-left">
+            Товары ({set.items.length})
+          </span>
+          <Icons.ChevronDown className={`text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} size={14} />
+        </button>
+        
+        {isExpanded && (
+          <div className="mt-3 flex flex-wrap gap-2 animate-bounce-short">
+            {set.items.map((it, idx) => (
+              <span key={idx} className="px-2 py-1 bg-slate-100 dark:bg-slate-700/50 rounded-lg text-[10px] font-bold text-slate-600 dark:text-slate-300 border border-transparent dark:border-slate-700">
+                {it.name}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <button 
+          onClick={onAdd}
+          disabled={isAdded}
+          className={`w-full py-4 font-black uppercase text-[10px] tracking-widest rounded-2xl transition-all ${isAdded ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-default' : 'bg-primary text-white hover:opacity-95 active:scale-[0.98]'}`}
+      >
+          {isAdded ? 'Добавлено' : 'В список покупок'}
+      </button>
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const [categories, setCategories] = useState<CategoryDef[]>(() => {
     const saved = localStorage.getItem('lumina_categories');
@@ -133,7 +193,7 @@ const App: React.FC = () => {
   const [setCreationMode, setSetCreationMode] = useState<'text' | 'history' | 'ai'>('text');
   const [selectedHistoryItems, setSelectedHistoryItems] = useState<string[]>([]);
   // New state for AI generated set preview
-  const [aiSetPreviewItems, setAiSetPreviewItems] = useState<{ name: string, categoryName: string, emoji: string }[]>([]);
+  const [aiSetPreviewItems, setAiSetPreviewItems] = useState<{ name: string, categoryName: string, emoji: string, checked?: boolean }[]>([]);
   const [editingAiSetIndex, setEditingAiSetIndex] = useState<number | null>(null);
   const [editingAiSetName, setEditingAiSetName] = useState('');
   
@@ -406,25 +466,59 @@ const App: React.FC = () => {
   };
 
   const startVoiceDictation = () => {
+    if (isAiLoading) return;
     if (!isAiEnabled) { showToast("Включите ИИ", true); return; }
+    
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) return;
+    
     const rec = new SR();
     rec.lang = 'ru-RU';
+    rec.interimResults = false;
+    rec.continuous = false;
+
+    let hasProcessed = false;
+
     rec.onstart = () => setIsRecording(true);
+    
     rec.onresult = async (e: any) => {
-      const text = e.results[0][0].transcript;
-      setIsAiLoading(true);
-      try {
-        const result = await parseDictatedText(text, categories);
-        if (result?.items.length) {
-          setParsedItems(result.items.map((p: any) => ({ ...p, selected: true })));
-          setDetectedDishName(result.dishName || null);
-          setIsParsedModalOpen(true);
+      if (hasProcessed) return;
+
+      const last = e.results.length - 1;
+      const text = e.results[last][0].transcript;
+      
+      if (e.results[last].isFinal && text.trim()) {
+        hasProcessed = true;
+        rec.stop();
+        setIsRecording(false);
+        
+        setIsAiLoading(true);
+        try {
+          const result = await parseDictatedText(text, categories);
+          if (result?.items.length) {
+            setParsedItems(result.items.map((p: any) => ({ ...p, selected: true })));
+            setDetectedDishName(result.dishName || null);
+            setIsParsedModalOpen(true);
+          }
+        } catch (err) { 
+          handleAiError(err); 
+        } finally { 
+          setIsAiLoading(false); 
         }
-      } catch (err) { handleAiError(err); } finally { setIsAiLoading(false); }
+      }
     };
-    rec.onend = () => setIsRecording(false);
+    
+    rec.onerror = (e: any) => {
+        if (e.error !== 'no-speech') {
+            console.error("Speech Recognition Error", e.error);
+        }
+        setIsRecording(false);
+    }
+
+    rec.onend = () => {
+        if (!hasProcessed) setIsRecording(false);
+    };
+    
     rec.start();
   };
 
@@ -671,7 +765,12 @@ const App: React.FC = () => {
         }).filter(i => i !== null) as any;
     } else if (setCreationMode === 'ai') {
         if (aiSetPreviewItems.length === 0) return;
-        setItems = aiSetPreviewItems;
+        // Filter only checked items
+        setItems = aiSetPreviewItems.filter(i => i.checked !== false).map(i => ({
+            name: i.name,
+            categoryName: i.categoryName,
+            emoji: i.emoji
+        }));
     }
 
     if (editingSet) {
@@ -769,6 +868,28 @@ const App: React.FC = () => {
     </div>
   );
 
+  const boughtTodayNode = completedToday.length > 0 ? (
+    <div className="mb-4">
+      <button onClick={() => setIsCompletedExpanded(!isCompletedExpanded)} className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl bg-slate-200/20 dark:bg-slate-800/20">
+        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 text-left">Куплено сегодня ({completedToday.length})</span>
+        <Icons.ChevronDown className={`transition-transform ${isCompletedExpanded ? 'rotate-180' : ''}`} size={14} />
+      </button>
+      {isCompletedExpanded && (
+        <div className="mt-2 bg-white/40 dark:bg-slate-800/10 rounded-3xl p-1">
+          {completedToday.map(item => {
+            const count = getTodayPurchaseCount(item.name);
+            return <ItemRow key={item.id} item={item} countBadge={count > 1 ? count : undefined} onToggle={() => toggleComplete(item.id)} onEdit={() => {
+              setEditingItem(item); 
+              setEditItemName(item.name); 
+              setEditItemCategoryId(item.categoryId);
+              setIsEditModalOpen(true); 
+            }} onDelete={() => deleteItem(item)} />;
+          })}
+        </div>
+      )}
+    </div>
+  ) : null;
+
   return (
     <div className="min-h-screen pb-40 bg-slate-50 dark:bg-[#020617] text-slate-900 dark:text-slate-100 font-sans transition-colors duration-300 relative">
       
@@ -829,27 +950,7 @@ const App: React.FC = () => {
       <main className="max-w-xl mx-auto px-4 pt-4 relative z-10">
         {viewMode === 'buy' && (
           <div className="space-y-4 pb-10">
-            {completedToday.length > 0 && (
-              <div className="mb-4">
-                <button onClick={() => setIsCompletedExpanded(!isCompletedExpanded)} className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl bg-slate-200/20 dark:bg-slate-800/20">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 text-left">Куплено сегодня ({completedToday.length})</span>
-                  <Icons.ChevronDown className={`transition-transform ${isCompletedExpanded ? 'rotate-180' : ''}`} size={14} />
-                </button>
-                {isCompletedExpanded && (
-                  <div className="mt-2 bg-white/40 dark:bg-slate-800/10 rounded-3xl p-1">
-                    {completedToday.map(item => {
-                      const count = getTodayPurchaseCount(item.name);
-                      return <ItemRow key={item.id} item={item} countBadge={count > 1 ? count : undefined} onToggle={() => toggleComplete(item.id)} onEdit={() => {
-                        setEditingItem(item); 
-                        setEditItemName(item.name); 
-                        setEditItemCategoryId(item.categoryId);
-                        setIsEditModalOpen(true); 
-                      }} onDelete={() => deleteItem(item)} />;
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
+            {activeGroups.length === 0 && boughtTodayNode}
 
             {activeGroups.map(group => (
               <div key={group.cat.id} className="animate-bounce-short">
@@ -869,6 +970,8 @@ const App: React.FC = () => {
                 </div>
               </div>
             ))}
+            
+            {activeGroups.length > 0 && boughtTodayNode}
             
             {activeGroups.length === 0 && (
                 <div className="py-20 text-center flex flex-col items-center max-w-sm mx-auto animate-bounce-short px-6">
@@ -1007,45 +1110,23 @@ const App: React.FC = () => {
                 {sortedSets.map((set) => {
                   const isAdded = addedSetIds.includes(set.id);
                   return (
-                    <div 
-                      key={set.id} 
-                      className="bg-white dark:bg-slate-800 p-5 rounded-3xl shadow-sm transition-all"
-                    >
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                          <span className="text-4xl">{set.emoji}</span>
-                          <h3 className="font-black truncate max-w-[140px]">{set.name}</h3>
-                          {set.usageCount !== undefined && set.usageCount > 0 && (
-                            <div className="w-6 h-6 bg-slate-100 dark:bg-slate-700 rounded-full flex items-center justify-center text-[10px] font-black text-slate-400 shadow-inner">
-                              {set.usageCount}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex gap-2">
-                          <button onClick={() => {
-                            setEditingSet(set);
-                            setNewSetName(set.name);
-                            setNewSetEmoji(set.emoji || '📦');
-                            setNewSetManualItems(set.items.map(it => it.name).join('\n'));
-                            setSetCreationMode('text');
-                            setSelectedHistoryItems([]);
-                            setAiSetPreviewItems([]);
-                            setIsSetModalOpen(true);
-                          }} className="p-2 text-slate-300 hover:text-primary transition-colors"><Icons.Pencil size={16} /></button>
-                          <button onClick={() => deleteSet(set)} className="p-2 text-slate-300 hover:text-red-500 transition-colors"><Icons.Trash2 size={16} /></button>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2 mb-4">
-                        {set.items.map((it, idx) => <span key={idx} className="px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-[10px] font-bold">{it.name}</span>)}
-                      </div>
-                      <button 
-                          onClick={() => !isAdded && setPartialSetModal({ isOpen: true, set, selectedIndices: set.items.map((_, i) => i) })}
-                          disabled={isAdded}
-                          className={`w-full py-4 font-black uppercase text-[10px] tracking-widest rounded-2xl transition-all ${isAdded ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-default' : 'bg-primary text-white hover:opacity-95 active:scale-[0.98]'}`}
-                      >
-                          {isAdded ? 'Добавлено' : 'В список покупок'}
-                      </button>
-                    </div>
+                    <SetCard 
+                      key={set.id}
+                      set={set}
+                      isAdded={isAdded}
+                      onEdit={() => {
+                        setEditingSet(set);
+                        setNewSetName(set.name);
+                        setNewSetEmoji(set.emoji || '📦');
+                        setNewSetManualItems(set.items.map(it => it.name).join('\n'));
+                        setSetCreationMode('text');
+                        setSelectedHistoryItems([]);
+                        setAiSetPreviewItems([]);
+                        setIsSetModalOpen(true);
+                      }}
+                      onDelete={() => deleteSet(set)}
+                      onAdd={() => !isAdded && setPartialSetModal({ isOpen: true, set, selectedIndices: set.items.map((_, i) => i) })}
+                    />
                   );
                 })}
                 <button 
@@ -1673,90 +1754,157 @@ const App: React.FC = () => {
                   <div className="flex flex-col h-full">
                     <p className="text-[10px] font-black uppercase opacity-40 mb-2 px-2 pt-2">Товары (каждый с новой строки)</p>
                     <textarea 
-                      value={newSetManualItems}
-                      onChange={(e) => setNewSetManualItems(e.target.value)}
-                      placeholder="Список товаров..."
-                      className="w-full h-full bg-transparent resize-none outline-none font-bold text-sm"
+                      value={newSetManualItems} 
+                      onChange={e => setNewSetManualItems(e.target.value)} 
+                      placeholder="Список товаров..." 
+                      className="w-full h-full bg-transparent resize-none outline-none font-bold text-sm" 
                     />
                   </div>
               ) : setCreationMode === 'history' ? (
-                  <div className="space-y-1">
-                      {historyList.length === 0 ? (
-                          <div className="text-center py-8 text-slate-400 text-xs">История пуста</div>
-                      ) : (
-                          historyList.map(item => (
-                              <div key={item.id} onClick={() => setSelectedHistoryItems(prev => prev.includes(item.id) ? prev.filter(i => i !== item.id) : [...prev, item.id])} className={`flex items-center gap-3 p-3 rounded-2xl transition-all cursor-pointer ${selectedHistoryItems.includes(item.id) ? 'bg-white dark:bg-slate-800 shadow-sm' : 'hover:bg-slate-100 dark:hover:bg-slate-700/50'}`}>
-                                  <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${selectedHistoryItems.includes(item.id) ? 'bg-primary border-primary' : 'border-slate-300'}`}>
-                                      {selectedHistoryItems.includes(item.id) && <Icons.Check size={12} className="text-white" />}
-                                  </div>
-                                  <span className="text-sm font-bold">{item.name}</span>
-                              </div>
-                          ))
-                      )}
+                  <div className="flex flex-col h-full">
+                     <p className="text-[10px] font-black uppercase opacity-40 mb-2 px-2 pt-2">Выберите из истории</p>
+                     <div className="space-y-2 flex-1">
+                        {historyList.map(item => {
+                            const isSelected = selectedHistoryItems.includes(item.id);
+                            return (
+                                <div key={item.id} onClick={() => setSelectedHistoryItems(prev => isSelected ? prev.filter(id => id !== item.id) : [...prev, item.id])} className={`flex items-center gap-3 p-3 rounded-2xl border transition-all cursor-pointer ${isSelected ? 'bg-white dark:bg-slate-800 border-primary/30 shadow-sm' : 'border-transparent hover:bg-white/50 dark:hover:bg-slate-800/50'}`}>
+                                    <div className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${isSelected ? 'bg-primary border-primary' : 'border-slate-300 dark:border-slate-600'}`}>
+                                        {isSelected && <Icons.Check size={12} className="text-white" strokeWidth={3} />}
+                                    </div>
+                                    <span className="font-bold text-sm">{item.name}</span>
+                                </div>
+                            )
+                        })}
+                        {historyList.length === 0 && <p className="text-center text-slate-400 py-10 text-xs italic">История покупок пуста</p>}
+                     </div>
                   </div>
               ) : (
-                  <div className="flex flex-col h-full items-center justify-center text-center p-4">
-                      {aiSetPreviewItems.length > 0 ? (
-                          <div className="w-full space-y-2">
-                             {aiSetPreviewItems.map((it, i) => (
-                                 <div key={i} className="flex items-center gap-2 bg-white dark:bg-slate-900 p-2 rounded-xl text-xs font-bold">
-                                     <span>{it.emoji}</span><span>{it.name}</span>
-                                 </div>
-                             ))}
+                  // AI MODE
+                  <div className="flex flex-col h-full">
+                      {aiSetPreviewItems.length === 0 ? (
+                          <div className="flex flex-col items-center justify-center h-full text-center px-4">
+                              <Icons.Sparkles className="text-primary mb-4" size={32} />
+                              <p className="text-xs font-bold mb-4 opacity-60">
+                                  {newSetName.trim() ? `Составить список для "${newSetName}"?` : 'Введите название набора сверху'}
+                              </p>
+                              <button 
+                                onClick={async () => {
+                                  if (!newSetName.trim()) { showToast("Введите название набора", true); return; }
+                                  setIsAiLoading(true);
+                                  try {
+                                    const result = await generateSetItems(newSetName, categories);
+                                    if (result) {
+                                      setNewSetEmoji(result.setEmoji || '🍱');
+                                      setAiSetPreviewItems(result.items.map(i => ({ ...i, checked: true })));
+                                    }
+                                  } catch (err) { handleAiError(err); } finally { setIsAiLoading(false); }
+                                }}
+                                disabled={!newSetName.trim() || isAiLoading}
+                                className={`px-8 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg transition-all ${!newSetName.trim() ? 'bg-slate-200 dark:bg-slate-800 text-slate-400' : 'bg-primary text-white hover:opacity-90'}`}
+                              >
+                                  {isAiLoading ? <Icons.Loader2 className="animate-spin" /> : 'Генерировать'}
+                              </button>
                           </div>
                       ) : (
-                         <>
-                             <Icons.Sparkles className="text-primary mb-4" size={32} />
-                             <p className="text-xs font-bold mb-4">Опишите, что нужно купить</p>
-                             <input value={newSetManualItems} onChange={e => setNewSetManualItems(e.target.value)} placeholder="Ингредиенты для пиццы" className="w-full bg-white dark:bg-slate-900 p-3 rounded-xl text-sm font-bold outline-none border dark:border-slate-700 mb-4" />
-                             <button onClick={async () => {
-                                 if(!newSetManualItems.trim()) return;
-                                 setIsAiLoading(true);
-                                 try {
-                                     const res = await generateSetItems(newSetManualItems, categories);
-                                     if(res) {
-                                         setNewSetEmoji(res.setEmoji);
-                                         setAiSetPreviewItems(res.items);
-                                     }
-                                 } catch(e) { handleAiError(e); } finally { setIsAiLoading(false); }
-                             }} className="bg-primary text-white px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-widest">
-                                 {isAiLoading ? <Icons.Loader2 className="animate-spin" /> : 'Генерировать'}
-                             </button>
-                         </>
+                          <div className="flex flex-col h-full">
+                              <div className="flex items-center justify-between mb-2 px-2 pt-2">
+                                  <p className="text-[10px] font-black uppercase opacity-40">Состав ({aiSetPreviewItems.filter(i => i.checked !== false).length})</p>
+                                  <button onClick={() => setAiSetPreviewItems([])} className="text-[10px] font-black uppercase text-slate-400 hover:text-red-500">Сброс</button>
+                              </div>
+                              <div className="flex-1 overflow-y-auto space-y-2 pr-1 scrollbar-hide pb-2">
+                                  {aiSetPreviewItems.map((item, idx) => (
+                                      <div key={idx} className={`flex items-center gap-3 p-3 rounded-2xl transition-all ${item.checked !== false ? 'bg-white dark:bg-slate-800 shadow-sm' : 'bg-slate-50 dark:bg-slate-800/50 opacity-50'}`}>
+                                          <div 
+                                            onClick={() => setAiSetPreviewItems(p => p.map((it, i) => i === idx ? { ...it, checked: !it.checked } : it))}
+                                            className={`w-6 h-6 rounded-[10px] flex items-center justify-center border-2 transition-all cursor-pointer flex-shrink-0 ${item.checked !== false ? 'bg-primary border-primary' : 'border-slate-300 dark:border-slate-600'}`}
+                                          >
+                                              {item.checked !== false && <Icons.Check size={14} className="text-white" strokeWidth={4} />}
+                                          </div>
+                                          <div className="flex-1 min-w-0">
+                                              {editingAiSetIndex === idx ? (
+                                                  <input 
+                                                    autoFocus
+                                                    className="w-full bg-transparent border-b-2 border-primary outline-none text-sm font-bold p-0"
+                                                    value={editingAiSetName}
+                                                    onChange={(e) => setEditingAiSetName(e.target.value)}
+                                                    onBlur={() => {
+                                                      if (editingAiSetName.trim()) {
+                                                        setAiSetPreviewItems(p => p.map((it, i) => i === idx ? { ...it, name: editingAiSetName } : it));
+                                                      }
+                                                      setEditingAiSetIndex(null);
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === 'Enter') {
+                                                        if (editingAiSetName.trim()) {
+                                                            setAiSetPreviewItems(p => p.map((it, i) => i === idx ? { ...it, name: editingAiSetName } : it));
+                                                        }
+                                                        setEditingAiSetIndex(null);
+                                                      }
+                                                    }}
+                                                  />
+                                              ) : (
+                                                  <div onClick={() => { setEditingAiSetIndex(idx); setEditingAiSetName(item.name); }} className="cursor-text">
+                                                      <p className={`font-bold text-sm truncate ${item.checked === false ? 'line-through opacity-50' : ''}`}>{item.name}</p>
+                                                      <p className="text-[10px] font-bold opacity-40">{item.categoryName}</p>
+                                                  </div>
+                                              )}
+                                          </div>
+                                          <div className="flex items-center gap-1">
+                                              <button onClick={() => { setEditingAiSetIndex(idx); setEditingAiSetName(item.name); }} className="p-2 text-slate-300 hover:text-primary transition-colors"><Icons.Pencil size={16} /></button>
+                                              <button onClick={() => setAiSetPreviewItems(p => p.filter((_, i) => i !== idx))} className="p-2 text-slate-300 hover:text-red-500 transition-colors"><Icons.Trash2 size={16} /></button>
+                                          </div>
+                                      </div>
+                                  ))}
+                                  <button 
+                                    onClick={() => {
+                                       const newItem = { name: 'Новый товар', categoryName: 'Разное', emoji: '📦', checked: true };
+                                       setAiSetPreviewItems([...aiSetPreviewItems, newItem]);
+                                       setEditingAiSetIndex(aiSetPreviewItems.length);
+                                       setEditingAiSetName('Новый товар');
+                                    }}
+                                    className="w-full py-3 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-primary transition-all border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                                  >
+                                    <Icons.Plus size={14} /> Добавить вручную
+                                  </button>
+                              </div>
+                          </div>
                       )}
                   </div>
               )}
             </div>
-
-            <div className="flex gap-3 mt-4 shrink-0">
-                <button onClick={() => setIsSetModalOpen(false)} className="flex-1 font-black uppercase text-[10px] tracking-widest text-slate-400">Отмена</button>
-                <button onClick={handleManualSetCreate} className="flex-[2] h-14 bg-primary text-white font-black uppercase text-[10px] tracking-widest rounded-2xl shadow-lg hover:opacity-90 transition-opacity">Сохранить</button>
+            
+            <div className="mt-4 space-y-3 flex-shrink-0">
+              <div className="flex gap-3">
+                <button onClick={() => { setIsSetModalOpen(false); setEditingSet(null); setNewSetName(''); setNewSetEmoji('📦'); setNewSetManualItems(''); setSetCreationMode('text'); setSelectedHistoryItems([]); setAiSetPreviewItems([]); }} className="flex-1 font-black uppercase text-[10px] tracking-widest text-slate-400">Отмена</button>
+                <button onClick={handleManualSetCreate} className="flex-[2] h-14 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-black uppercase text-[10px] tracking-widest rounded-2xl shadow-lg hover:opacity-90 transition-opacity">Сохранить</button>
+              </div>
             </div>
           </div>
         </div>
       )}
-      
-      {/* EMOJI PICKER AND NAVBAR */}
+
+      {/* EMOJI PICKER MODAL */}
       {isEmojiPickerOpen && (
-          <div className="fixed inset-0 z-[600] flex items-center justify-center p-6 bg-black/60 backdrop-blur-md">
-              <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[32px] pt-5 px-6 pb-6 shadow-2xl flex flex-col h-[60vh] animate-bounce-short">
-                  <ModalHeader title="Выберите иконку" onClose={() => setIsEmojiPickerOpen(false)} />
-                  <div className="flex-1 overflow-y-auto p-1 scrollbar-hide">
-                      <div className="grid grid-cols-5 gap-3">
-                          {EMOJI_LIST.map(emoji => (
-                              <button key={emoji} onClick={() => { setNewSetEmoji(emoji); setIsEmojiPickerOpen(false); }} className={`w-14 h-14 text-2xl flex items-center justify-center rounded-2xl transition-all ${newSetEmoji === emoji ? 'bg-primary text-white scale-110 shadow-lg' : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>{emoji}</button>
-                          ))}
-                      </div>
-                  </div>
-              </div>
-          </div>
+        <div className="fixed inset-0 z-[700] flex items-center justify-center p-6 bg-black/60 backdrop-blur-md" onClick={() => setIsEmojiPickerOpen(false)}>
+            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[32px] pt-5 px-6 pb-6 shadow-2xl flex flex-col max-h-[60vh] animate-bounce-short" onClick={e => e.stopPropagation()}>
+                <ModalHeader title="Выберите иконку" onClose={() => setIsEmojiPickerOpen(false)} />
+                <div className="grid grid-cols-5 gap-3 overflow-y-auto p-1 scrollbar-hide">
+                    {EMOJI_LIST.map(emoji => (
+                    <button key={emoji} onClick={() => { setNewSetEmoji(emoji); setIsEmojiPickerOpen(false); }} className={`w-14 h-14 text-2xl flex items-center justify-center rounded-2xl transition-all ${newSetEmoji === emoji ? 'bg-primary text-white scale-110 shadow-lg' : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>{emoji}</button>
+                    ))}
+                </div>
+            </div>
+        </div>
       )}
 
-      <nav className="fixed bottom-0 left-0 right-0 h-20 bg-white dark:bg-[#020617] border-t dark:border-slate-800 flex items-center justify-around z-40 pb-safe">
-        <NavItem active={viewMode === 'buy'} onClick={() => setViewMode('buy')} icon={<Icons.ShoppingBag size={24} strokeWidth={viewMode === 'buy' ? 2.5 : 2} />} label="Список" />
-        <NavItem active={viewMode === 'history'} onClick={() => setViewMode('history')} icon={<Icons.History size={24} strokeWidth={viewMode === 'history' ? 2.5 : 2} />} label="История" />
-        <NavItem active={viewMode === 'sets'} onClick={() => setViewMode('sets')} icon={<Icons.List size={24} strokeWidth={viewMode === 'sets' ? 2.5 : 2} />} label="Наборы" />
-      </nav>
+      <div className="fixed bottom-0 left-0 right-0 z-30 bg-white/80 dark:bg-[#020617]/80 backdrop-blur-xl border-t dark:border-slate-800 pb-safe">
+        <div className="max-w-xl mx-auto px-6 h-[88px] flex items-start justify-between gap-4 pt-3">
+          <NavItem active={viewMode === 'buy'} onClick={() => setViewMode('buy')} icon={<Icons.ShoppingBag size={22} />} label="Купить" />
+          <NavItem active={viewMode === 'history'} onClick={() => setViewMode('history')} icon={<Icons.History size={22} />} label="История" />
+          <NavItem active={viewMode === 'sets'} onClick={() => setViewMode('sets')} icon={<Icons.List size={22} />} label="Наборы" />
+        </div>
+      </div>
+
     </div>
   );
 };
