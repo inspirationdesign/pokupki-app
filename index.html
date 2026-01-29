@@ -3,7 +3,7 @@
 <html lang="en" class="light">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Lumina Grocer</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -71,5 +71,136 @@
   <body class="bg-slate-50 text-slate-900 dark:bg-[#020617] dark:text-slate-100">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
+    <!-- ========================================== --> 
+    <!-- 🛡 СКРИПТ: ЗАЩИТА ОТ ЗАКРЫТИЯ СВАЙПОМ --> 
+    <!-- ========================================== --> 
+    <script> 
+      document.addEventListener("DOMContentLoaded", () => { 
+        const tg = window.Telegram?.WebApp; 
+        
+        if (tg) { 
+          tg.ready(); 
+          tg.expand(); 
+          tg.setBackgroundColor('#131313'); 
+          
+          if (typeof tg.disableVerticalSwipes === "function") { 
+            tg.disableVerticalSwipes(); 
+          } 
+        } 
+        
+        document.body.style.cssText = ` 
+          margin: 0; 
+          padding: 0; 
+          overflow-y: auto; 
+          -webkit-overflow-scrolling: touch; 
+          overscroll-behavior-y: contain; 
+          background-color: #131313; 
+          min-height: calc(100vh + 5px); 
+          position: relative; 
+        `; 
+        
+        document.documentElement.style.cssText = ` 
+          margin: 0; 
+          padding: 0; 
+          background-color: #131313; 
+          overscroll-behavior-y: contain; 
+          height: 100%; 
+        `; 
+        
+        let lastScrollY = 1; 
+        let touchStartY = 0; 
+        let isAtTop = false; 
+        
+        function maintainScroll() { 
+          if (window.scrollY === 0) { 
+            window.scrollTo(0, 1); 
+            lastScrollY = 1; 
+          } 
+        } 
+        
+        // Функция проверки - это кнопка или её родитель 
+        function isButton(element) { 
+          return element.closest('[button]') || 
+                 element.hasAttribute('button') || 
+                 element.tagName === 'BUTTON' || 
+                 element.tagName === 'A'; 
+        } 
+        
+        document.addEventListener("touchstart", (e) => { 
+          // Если это кнопка - не блокируем 
+          if (isButton(e.target)) return; 
+          
+          touchStartY = e.touches[0].clientY; 
+          isAtTop = window.scrollY <= 1; 
+          
+          if (isAtTop) { 
+            window.scrollTo(0, 1); 
+          } 
+        }, { passive: true }); 
+        
+        document.addEventListener("touchmove", (e) => { 
+          // Если это кнопка - не блокируем 
+          if (isButton(e.target)) return; 
+          
+          const touchY = e.touches[0].clientY; 
+          const deltaY = touchY - touchStartY; 
+          const currentScrollY = window.scrollY; 
+          
+          if (deltaY > 0 && currentScrollY <= 2) { 
+            e.preventDefault(); 
+            e.stopPropagation(); 
+            return false; 
+          } 
+        }, { passive: false }); 
+        
+        document.addEventListener("touchend", (e) => { 
+          // Если это кнопка - не блокируем 
+          if (isButton(e.target)) return; 
+          
+          maintainScroll(); 
+        }, { passive: true }); 
+        
+        let scrollTimeout; 
+        window.addEventListener("scroll", () => { 
+          clearTimeout(scrollTimeout); 
+          scrollTimeout = setTimeout(() => { 
+            if (window.scrollY === 0) { 
+              window.scrollTo(0, 1); 
+            } 
+          }, 10); 
+        }, { passive: true }); 
+        
+        document.addEventListener("gesturestart", (e) => { 
+          // Если это кнопка - не блокируем 
+          if (isButton(e.target)) return; 
+          e.preventDefault(); 
+        }, { passive: false }); 
+        
+        document.addEventListener("gesturechange", (e) => { 
+          // Если это кнопка - не блокируем 
+          if (isButton(e.target)) return; 
+          e.preventDefault(); 
+        }, { passive: false }); 
+        
+        document.addEventListener("gestureend", (e) => { 
+          // Если это кнопка - не блокируем 
+          if (isButton(e.target)) return; 
+          e.preventDefault(); 
+        }, { passive: false }); 
+        
+        setTimeout(() => { 
+          maintainScroll(); 
+        }, 100); 
+        
+        setInterval(() => { 
+          if (window.scrollY === 0) { 
+            window.scrollTo(0, 1); 
+          } 
+        }, 500); 
+      }); 
+    </script> 
+    <!-- ========================================== --> 
+    <!-- КОНЕЦ СКРИПТА: ЗАЩИТА ОТ ЗАКРЫТИЯ СВАЙПОМ --> 
+    <!-- ========================================== --> 
   </body>
 </html>

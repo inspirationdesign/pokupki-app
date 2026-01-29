@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { CategoryDef, ProductItem, ViewMode, ShoppingSet, PurchaseLog } from './types';
 import { DEFAULT_CATEGORIES, INITIAL_ITEMS, EMOJI_LIST } from './constants';
 import { categorizeProduct, parseDictatedText, generateSetItems, analyzeHistoryForSets } from './services/geminiService';
+import { api, Family, User } from './services/api';
 import { Icons } from './components/Icon';
 
 // Interface for Telegram User
@@ -139,6 +140,41 @@ const App: React.FC = () => {
   
   // Telegram User State
   const [tgUser, setTgUser] = useState<TelegramUser | null>(null);
+  const [family, setFamily] = useState<Family | null>(null);
+  const [familyMembers, setFamilyMembers] = useState<User[]>([]);
+
+  // API Sync
+  useEffect(() => {
+    if (tgUser) {
+      api.auth({
+        telegram_id: tgUser.id,
+        username: tgUser.username,
+        first_name: tgUser.first_name,
+        last_name: tgUser.last_name,
+        photo_url: tgUser.photo_url
+      }).then(data => {
+        setFamily(data.family);
+        setFamilyMembers(data.members);
+        // Load items from server
+        api.getItems(tgUser.id).then(serverItems => {
+            // Merge or replace? For now replace to ensure consistency with DB
+            // But we need to map server items to ProductItem interface
+            // Server item: {id, text, is_bought, category, family_id}
+            // ProductItem: {id, name, categoryId, completed, onList, ...}
+            
+            const mappedItems: ProductItem[] = serverItems.map((si: any) => ({
+                id: si.id,
+                name: si.text,
+                categoryId: si.category,
+                completed: si.is_bought,
+                onList: true, // If it's in DB, it's on list (logic assumption)
+                purchaseCount: 0 // Server doesn't track this yet, default to 0
+            }));
+            setItems(mappedItems);
+        });
+      }).catch(err => console.error("API Auth Error:", err));
+    }
+  }, [tgUser]);
 
   // Modals
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
@@ -325,13 +361,16 @@ const App: React.FC = () => {
     const existing = items.find(i => i.name.toLowerCase() === capName.toLowerCase());
     
     if (existing) {
-      setItems(prev => prev.map(i => i.id === existing.id ? { 
-        ...i, 
-        onList: onList || i.onList, 
-        completed: onList ? false : i.completed, 
-        completedAt: onList ? undefined : i.completedAt, 
-        categoryId: categoryId !== 'dept_none' ? categoryId : i.categoryId 
-      } : i));
+      const updatedItem = { 
+        ...existing, 
+        onList: onList || existing.onList, 
+        completed: onList ? false : existing.completed, 
+        completedAt: onList ? undefined : existing.completedAt, 
+        categoryId: categoryId !== 'dept_none' ? categoryId : existing.categoryId 
+      };
+      
+      setItems(prev => prev.map(i => i.id === existing.id ? updatedItem : i));
+      if (tgUser) api.updateItem(updatedItem, tgUser.id).catch(console.error);
     } else {
       const newItem: ProductItem = {
         id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
@@ -342,6 +381,7 @@ const App: React.FC = () => {
         purchaseCount: 0
       };
       setItems(prev => [newItem, ...prev]);
+      if (tgUser) api.addItem(newItem, tgUser.id).catch(console.error);
     }
   };
 
@@ -440,6 +480,12 @@ const App: React.FC = () => {
   };
 
   const toggleComplete = (id: string) => {
+    // API Sync
+    const item = items.find(i => i.id === id);
+    if (item && tgUser) {
+        api.updateItem({ ...item, completed: !item.completed }, tgUser.id).catch(console.error);
+    }
+
     setItems(prev => prev.map(item => {
       if (item.id === id) {
         const newCompleted = !item.completed;
@@ -574,6 +620,7 @@ const App: React.FC = () => {
   const performItemDelete = (item: ProductItem) => {
     setLastDeletedItem(item);
     setItems(prev => prev.filter(i => i.id !== item.id));
+    if (tgUser) api.deleteItem(item.id, tgUser.id).catch(console.error);
     setItemDeleteConfirmModal({ isOpen: false, item: null });
     setShowUndoToast(true);
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
@@ -670,9 +717,6 @@ const App: React.FC = () => {
     }
   };
 
-  const inviteUser = () => {
-    showToast("Совместный доступ появится в ближайшем обновлении!");
-  };
 
   const buyList = useMemo(() => {
     let filtered = items.filter(i => i.onList);
@@ -884,22 +928,44 @@ const App: React.FC = () => {
     </div>
   );
 
-  const UserProfileHeader = () => (
-    <div className="flex items-center gap-3">
-        <div className="relative z-10">
-            {tgUser?.photo_url ? (
-                <img src={tgUser.photo_url} alt="Ava" className="w-9 h-9 rounded-full object-cover bg-slate-200" />
-            ) : (
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary to-violet-600 flex items-center justify-center text-white font-bold text-sm shadow-sm">
-                    {tgUser?.first_name?.charAt(0) || 'G'}
-                </div>
-            )}
-        </div>
-        <button onClick={inviteUser} className="w-9 h-9 rounded-full border-2 border-dashed border-slate-300 dark:border-slate-600 flex items-center justify-center text-slate-300 hover:text-primary hover:border-primary transition-all">
-            <Icons.Plus size={16} />
-        </button>
+  const inviteUser = () => {
+     if (family?.invite_code) {
+         const botUsername = "LuminaGrocerBot"; 
+         const link = `https://t.me/${botUsername}?start=invite_${family.invite_code}`;
+         const tg = (window as any).Telegram?.WebApp;
+         if (tg && tg.openTelegramLink) {
+             tg.openTelegramLink(link);
+         } else {
+             window.open(link, '_blank');
+         }
+     } else {
+         showToast("Ошибка: код семьи не найден", true);
+     }
+  };
+
+  const UserProfileHeader = () => {
+    const members = familyMembers.length > 0 ? familyMembers : (tgUser ? [tgUser] : []);
+    
+    return (
+    <div className="flex items-center gap-2">
+        {members.map((m: any, idx) => (
+             <div key={m.telegram_id || idx} className="relative z-10">
+                {m.photo_url ? (
+                    <img src={m.photo_url} alt="Ava" className="w-9 h-9 rounded-full object-cover bg-slate-200 border-2 border-white dark:border-slate-900" />
+                ) : (
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary to-violet-600 flex items-center justify-center text-white font-bold text-sm shadow-sm border-2 border-white dark:border-slate-900">
+                        {m.first_name?.charAt(0) || m.username?.charAt(0) || '?'}
+                    </div>
+                )}
+            </div>
+        ))}
+        {members.length < 5 && (
+            <button onClick={inviteUser} className="w-9 h-9 rounded-full border-2 border-dashed border-slate-300 dark:border-slate-600 flex items-center justify-center text-slate-300 hover:text-primary hover:border-primary transition-all">
+                <Icons.Plus size={16} />
+            </button>
+        )}
     </div>
-  );
+  )};
 
   const NavItem: React.FC<{ active: boolean, onClick: () => void, icon: React.ReactNode, label: string }> = ({ active, onClick, icon, label }) => (
     <button onClick={onClick} className={`flex flex-col items-center gap-1 transition-all flex-1 ${active ? 'text-primary' : 'text-slate-400 opacity-60 hover:opacity-100'}`}>
